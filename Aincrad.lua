@@ -23,8 +23,8 @@ local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 local MAX_DIST = 150
 
 -- ================== VARIABEL ==================
-local espLineEnabled = true
-local espBoxEnabled = true
+local espLineEnabled = false
+local espBoxEnabled = false
 local hologramEnabled = false
 
 local espLines = {}
@@ -55,7 +55,8 @@ local function cekKey(key)
     return false
 end
 
--- ================== HOLOGRAM ==================
+-- ================== PERBAIKAN HOLOGRAM ==================
+-- HOLOGRAM (lebih cerah)
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -79,9 +80,9 @@ local function applyHologram(player)
                     Color = part.Color
                 }
             end
-            part.Material = Enum.Material.ForceField
-            part.Transparency = 0.45
-            part.Color = merah
+            part.Material = Enum.Material.Neon
+            part.Transparency = 0.25
+            part.Color = Color3.fromRGB(255, 50, 50)
         end
     end
     
@@ -93,49 +94,15 @@ local function applyHologram(player)
         for _, part in pairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 pcall(function()
-                    part.Material = Enum.Material.ForceField
-                    part.Transparency = 0.45
-                    part.Color = merah
+                    part.Material = Enum.Material.Neon
+                    part.Transparency = 0.25
+                    part.Color = Color3.fromRGB(255, 50, 50)
                 end)
             end
         end
     end)
     
     hologramConnections[player] = conn
-end
-
-local function removeHologram(player)
-    if hologramConnections[player] then
-        hologramConnections[player]:Disconnect()
-        hologramConnections[player] = nil
-    end
-    
-    if originalHologramData[player] then
-        for part, data in pairs(originalHologramData[player]) do
-            if part and part.Parent then
-                pcall(function()
-                    part.Material = data.Material
-                    part.Transparency = data.Transparency
-                    part.Color = data.Color
-                end)
-            end
-        end
-        originalHologramData[player] = nil
-    end
-end
-
-local function applyHologramToAll()
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            applyHologram(p)
-        end
-    end
-end
-
-local function removeHologramFromAll()
-    for p, _ in pairs(hologramConnections) do
-        removeHologram(p)
-    end
 end
 
 -- ================== ESP LINE ==================
