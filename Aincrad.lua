@@ -1,4 +1,4 @@
--- ================== AINCRAD V1.3 ==================
+-- ================== AINCRAD V1.4 ==================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -28,16 +28,17 @@ local espLines = {}
 local espBoxes = {}
 local espNames = {}
 
--- Hologram dengan Highlight (tembus dinding)
-local hologramHighlights = {}  -- key: player, value: Highlight instance
+local hologramHighlights = {}
 
--- Noclip var
 local noclipEnabled = false
 local noclipConn = nil
 
--- God Mode var
 local godModeEnabled = false
 local godModeConn = nil
+
+local speedEnabled = false
+local defaultSpeed = 16
+local boostSpeed = 70
 
 -- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
@@ -64,7 +65,6 @@ local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
     if not char then return end
-    -- Hapus yang lama jika ada
     if hologramHighlights[player] then
         hologramHighlights[player]:Destroy()
         hologramHighlights[player] = nil
@@ -75,7 +75,7 @@ local function applyHologram(player)
     hl.FillTransparency = 0.4
     hl.OutlineColor = Color3.fromRGB(255, 200, 200)
     hl.OutlineTransparency = 0.2
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop  -- tembus dinding!
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Enabled = true
     hologramHighlights[player] = hl
 end
@@ -101,7 +101,6 @@ local function removeHologramFromAll()
     end
 end
 
--- Update hologram saat karakter muncul (jika mode aktif)
 local function onCharacterAdded(player, character)
     if hologramEnabled and player ~= LocalPlayer then
         task.wait(0.2)
@@ -221,7 +220,6 @@ local function initESP()
     end
 end
 
--- Event untuk karakter baru (update hologram)
 Players.PlayerAdded:Connect(function(p)
     task.wait(0.5)
     createLine(p)
@@ -266,6 +264,14 @@ local function updateGodMode()
             end
         end
     end)
+end
+
+-- ================== SPEED BOOST ==================
+local function setSpeed(enabled)
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.WalkSpeed = enabled and boostSpeed or defaultSpeed
+    end
 end
 
 -- ================== GUI KEY ==================
@@ -562,7 +568,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabMain = Instance.new("TextButton")
         tabMain.Parent = TabBar
-        tabMain.Size = UDim2.new(0.5, -2, 1, -4)
+        tabMain.Size = UDim2.new(0.33, -2, 1, -4)
         tabMain.Position = UDim2.new(0, 2, 0, 2)
         tabMain.BackgroundColor3 = cyan
         tabMain.BackgroundTransparency = 0.3
@@ -576,8 +582,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabESP = Instance.new("TextButton")
         tabESP.Parent = TabBar
-        tabESP.Size = UDim2.new(0.5, -2, 1, -4)
-        tabESP.Position = UDim2.new(0.5, 2, 0, 2)
+        tabESP.Size = UDim2.new(0.33, -2, 1, -4)
+        tabESP.Position = UDim2.new(0.33, 2, 0, 2)
         tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabESP.BackgroundTransparency = 0.5
         tabESP.Text = "ESP"
@@ -587,6 +593,20 @@ VerifyBtn.MouseButton1Click:Connect(function()
         local tabESPCorner = Instance.new("UICorner")
         tabESPCorner.Parent = tabESP
         tabESPCorner.CornerRadius = UDim.new(0, 8)
+        
+        local tabInfo = Instance.new("TextButton")
+        tabInfo.Parent = TabBar
+        tabInfo.Size = UDim2.new(0.33, -2, 1, -4)
+        tabInfo.Position = UDim2.new(0.66, 2, 0, 2)
+        tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        tabInfo.BackgroundTransparency = 0.5
+        tabInfo.Text = "INFO"
+        tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+        tabInfo.Font = Enum.Font.GothamBold
+        tabInfo.TextSize = 14
+        local tabInfoCorner = Instance.new("UICorner")
+        tabInfoCorner.Parent = tabInfo
+        tabInfoCorner.CornerRadius = UDim.new(0, 8)
         
         -- Content panels
         local contentMain = Instance.new("ScrollingFrame")
@@ -628,6 +648,18 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 10)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
+        local contentInfo = Instance.new("Frame")
+        contentInfo.Parent = MainFrame
+        contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentInfo.Position = UDim2.new(0.03, 0, 0.21, 0)
+        contentInfo.BackgroundColor3 = gray
+        contentInfo.BackgroundTransparency = 0.4
+        contentInfo.BorderSizePixel = 0
+        contentInfo.Visible = false
+        local contentInfoCorner = Instance.new("UICorner")
+        contentInfoCorner.Parent = contentInfo
+        contentInfoCorner.CornerRadius = UDim.new(0, 12)
+        
         -- Tab switching
         tabMain.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = cyan
@@ -636,8 +668,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabInfo.BackgroundTransparency = 0.5
+            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = true
             contentESP.Visible = false
+            contentInfo.Visible = false
         end)
         tabESP.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = cyan
@@ -646,15 +682,33 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabInfo.BackgroundTransparency = 0.5
+            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = true
+            contentInfo.Visible = false
+        end)
+        tabInfo.MouseButton1Click:Connect(function()
+            tabInfo.BackgroundColor3 = cyan
+            tabInfo.BackgroundTransparency = 0.3
+            tabInfo.TextColor3 = Color3.fromRGB(255, 255, 255)
+            tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabMain.BackgroundTransparency = 0.5
+            tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabESP.BackgroundTransparency = 0.5
+            tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            contentMain.Visible = false
+            contentESP.Visible = false
+            contentInfo.Visible = true
         end)
         
-        -- ================== FUNGSI TOGGLE ==================
-        local function createToggle(parent, text, desc, defaultColor, callback, defaultState)
+        -- ================== FUNGSI TOGGLE (tanpa deskripsi) ==================
+        local function createToggle(parent, text, defaultColor, callback, defaultState)
             local frame = Instance.new("Frame")
             frame.Parent = parent
-            frame.Size = UDim2.new(0.95, 0, 0, 65)
+            frame.Size = UDim2.new(0.95, 0, 0, 50)
             frame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
             frame.BackgroundTransparency = 0.2
             frame.BorderSizePixel = 0
@@ -664,25 +718,14 @@ VerifyBtn.MouseButton1Click:Connect(function()
             
             local lbl = Instance.new("TextLabel")
             lbl.Parent = frame
-            lbl.Size = UDim2.new(0.7, 0, 0.5, 0)
-            lbl.Position = UDim2.new(0.05, 0, 0, 5)
+            lbl.Size = UDim2.new(0.7, 0, 1, 0)
+            lbl.Position = UDim2.new(0.05, 0, 0, 0)
             lbl.BackgroundTransparency = 1
             lbl.Text = text
             lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
             lbl.Font = Enum.Font.GothamBold
             lbl.TextSize = 14
             lbl.TextXAlignment = Enum.TextXAlignment.Left
-            
-            local descLbl = Instance.new("TextLabel")
-            descLbl.Parent = frame
-            descLbl.Size = UDim2.new(0.7, 0, 0.4, 0)
-            descLbl.Position = UDim2.new(0.05, 0, 0.5, 0)
-            descLbl.BackgroundTransparency = 1
-            descLbl.Text = desc
-            descLbl.TextColor3 = Color3.fromRGB(150, 150, 150)
-            descLbl.Font = Enum.Font.Gotham
-            descLbl.TextSize = 10
-            descLbl.TextXAlignment = Enum.TextXAlignment.Left
             
             local sw = Instance.new("Frame")
             sw.Parent = frame
@@ -718,33 +761,31 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
-        -- MAIN tab: Noclip + God Mode
-        createToggle(contentMain, "🌀 NOCLIP", "", cyan, function(s)
+        -- MAIN tab
+        createToggle(contentMain, "NOCLIP", cyan, function(s)
             noclipEnabled = s
-            if s then
-                updateNoclip()
-            end
+            if s then updateNoclip() end
         end, false)
         
-        createToggle(contentMain, "💀 GOD MODE", "", cyan, function(s)
+        createToggle(contentMain, "GOD MODE", cyan, function(s)
             godModeEnabled = s
-            if s then
-                updateGodMode()
-            elseif godModeConn then
-                godModeConn:Disconnect()
-                godModeConn = nil
-            end
+            if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
+        end, false)
+        
+        createToggle(contentMain, "SPEED 70", cyan, function(s)
+            speedEnabled = s
+            setSpeed(s)
         end, false)
         
         -- ESP tab
-        createToggle(contentESP, "📏 ESP LINE", "Garis dari atas ke player (Cyan)", cyan, function(s)
+        createToggle(contentESP, "ESP LINE", cyan, function(s)
             espLineEnabled = s
             if not s then
                 for _, v in pairs(espLines) do v[1].Visible = false end
             end
         end, false)
         
-        createToggle(contentESP, "📦 ESP BOX", "Kotak + Nama player (Hijau)", hijau, function(s)
+        createToggle(contentESP, "ESP BOX", hijau, function(s)
             espBoxEnabled = s
             if not s then
                 for _, v in pairs(espBoxes) do v[1].Visible = false end
@@ -752,7 +793,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        createToggle(contentESP, "✨ HOLOGRAM", "Tembus dinding + efek merah (Highlight)", merah, function(s)
+        createToggle(contentESP, "HOLOGRAM", merah, function(s)
             hologramEnabled = s
             if s then
                 applyHologramToAll()
@@ -761,27 +802,17 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        -- Info panel (di ESP tab)
-        local infoFrame = Instance.new("Frame")
-        infoFrame.Parent = contentESP
-        infoFrame.Size = UDim2.new(0.95, 0, 0, 100)
-        infoFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        infoFrame.BackgroundTransparency = 0.2
-        infoFrame.BorderSizePixel = 0
-        local infoCorner = Instance.new("UICorner")
-        infoCorner.Parent = infoFrame
-        infoCorner.CornerRadius = UDim.new(0, 10)
-        
-        local infoText = Instance.new("TextLabel")
-        infoText.Parent = infoFrame
-        infoText.Size = UDim2.new(1, 0, 1, 0)
-        infoText.BackgroundTransparency = 1
-        infoText.Text = "👨‍💻 DEVELOPER: Putzzdev\n📱 TIKTOK: @Putzz_mvpp\n📞 WA: 088976255131"
-        infoText.TextColor3 = Color3.fromRGB(255, 255, 255)
-        infoText.Font = Enum.Font.Gotham
-        infoText.TextSize = 11
-        infoText.TextWrapped = true
-        infoText.TextYAlignment = Enum.TextYAlignment.Center
+        -- INFO tab (tanpa toggle)
+        local infoTextLabel = Instance.new("TextLabel")
+        infoTextLabel.Parent = contentInfo
+        infoTextLabel.Size = UDim2.new(1, 0, 1, 0)
+        infoTextLabel.BackgroundTransparency = 1
+        infoTextLabel.Text = "AINCRAD\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
+        infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        infoTextLabel.Font = Enum.Font.Gotham
+        infoTextLabel.TextSize = 14
+        infoTextLabel.TextWrapped = true
+        infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
         
         -- Tombol toggle menu
         local menuBtn = Instance.new("TextButton")
@@ -790,7 +821,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         menuBtn.Position = UDim2.new(0, 10, 0.5, -20)
         menuBtn.BackgroundColor3 = cyan
         menuBtn.BackgroundTransparency = 0.2
-        menuBtn.Text = "🔓 AINCRAD"
+        menuBtn.Text = "AINCRAD"
         menuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         menuBtn.Font = Enum.Font.GothamBlack
         menuBtn.TextSize = 13
