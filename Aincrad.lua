@@ -1,4 +1,4 @@
--- ================== AINCRAD V1.2 ==================
+-- ================== AINCRAD V1.3 ==================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -28,12 +28,16 @@ local espLines = {}
 local espBoxes = {}
 local espNames = {}
 
-local hologramConnections = {}
-local originalHologramData = {}
+-- Hologram dengan Highlight (tembus dinding)
+local hologramHighlights = {}  -- key: player, value: Highlight instance
 
 -- Noclip var
 local noclipEnabled = false
 local noclipConn = nil
+
+-- God Mode var
+local godModeEnabled = false
+local godModeConn = nil
 
 -- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
@@ -55,66 +59,31 @@ local function cekKey(key)
     return false
 end
 
--- ================== HOLOGRAM (CHAMS) ==================
+-- ================== HOLOGRAM (Highlight) ==================
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
     if not char then return end
-    if hologramConnections[player] then
-        hologramConnections[player]:Disconnect()
-        hologramConnections[player] = nil
+    -- Hapus yang lama jika ada
+    if hologramHighlights[player] then
+        hologramHighlights[player]:Destroy()
+        hologramHighlights[player] = nil
     end
-    if not originalHologramData[player] then
-        originalHologramData[player] = {}
-    end
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if not originalHologramData[player][part] then
-                originalHologramData[player][part] = {
-                    Material = part.Material,
-                    Transparency = part.Transparency,
-                    Color = part.Color
-                }
-            end
-            part.Material = Enum.Material.Neon
-            part.Transparency = 0.2
-            part.Color = merah
-        end
-    end
-    local conn = RunService.RenderStepped:Connect(function()
-        if not hologramEnabled then return end
-        if not player or not player.Parent then conn:Disconnect() return end
-        local char = player.Character
-        if not char then return end
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                pcall(function()
-                    part.Material = Enum.Material.Neon
-                    part.Transparency = 0.2
-                    part.Color = merah
-                end)
-            end
-        end
-    end)
-    hologramConnections[player] = conn
+    local hl = Instance.new("Highlight")
+    hl.Parent = char
+    hl.FillColor = merah
+    hl.FillTransparency = 0.4
+    hl.OutlineColor = Color3.fromRGB(255, 200, 200)
+    hl.OutlineTransparency = 0.2
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop  -- tembus dinding!
+    hl.Enabled = true
+    hologramHighlights[player] = hl
 end
 
 local function removeHologram(player)
-    if hologramConnections[player] then
-        hologramConnections[player]:Disconnect()
-        hologramConnections[player] = nil
-    end
-    if originalHologramData[player] then
-        for part, data in pairs(originalHologramData[player]) do
-            if part and part.Parent then
-                pcall(function()
-                    part.Material = data.Material
-                    part.Transparency = data.Transparency
-                    part.Color = data.Color
-                end)
-            end
-        end
-        originalHologramData[player] = nil
+    if hologramHighlights[player] then
+        hologramHighlights[player]:Destroy()
+        hologramHighlights[player] = nil
     end
 end
 
@@ -127,8 +96,16 @@ local function applyHologramToAll()
 end
 
 local function removeHologramFromAll()
-    for p, _ in pairs(hologramConnections) do
+    for p, _ in pairs(hologramHighlights) do
         removeHologram(p)
+    end
+end
+
+-- Update hologram saat karakter muncul (jika mode aktif)
+local function onCharacterAdded(player, character)
+    if hologramEnabled and player ~= LocalPlayer then
+        task.wait(0.2)
+        applyHologram(player)
     end
 end
 
@@ -244,11 +221,15 @@ local function initESP()
     end
 end
 
+-- Event untuk karakter baru (update hologram)
 Players.PlayerAdded:Connect(function(p)
     task.wait(0.5)
     createLine(p)
     createBox(p)
-    if hologramEnabled then
+    p.CharacterAdded:Connect(function(char)
+        onCharacterAdded(p, char)
+    end)
+    if hologramEnabled and p.Character then
         task.wait(0.5)
         applyHologram(p)
     end
@@ -269,6 +250,19 @@ local function updateNoclip()
                 if part:IsA("BasePart") then
                     part.CanCollide = false
                 end
+            end
+        end
+    end)
+end
+
+-- ================== GOD MODE ==================
+local function updateGodMode()
+    if godModeConn then godModeConn:Disconnect() end
+    godModeConn = RunService.Heartbeat:Connect(function()
+        if godModeEnabled and LocalPlayer.Character then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
             end
         end
     end)
@@ -724,11 +718,21 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
-        -- MAIN tab: Noclip
-        createToggle(contentMain, "🌀 NOCLIP", "Tembus dinding", cyan, function(s)
+        -- MAIN tab: Noclip + God Mode
+        createToggle(contentMain, "🌀 NOCLIP", "", cyan, function(s)
             noclipEnabled = s
             if s then
                 updateNoclip()
+            end
+        end, false)
+        
+        createToggle(contentMain, "💀 GOD MODE", "", cyan, function(s)
+            godModeEnabled = s
+            if s then
+                updateGodMode()
+            elseif godModeConn then
+                godModeConn:Disconnect()
+                godModeConn = nil
             end
         end, false)
         
@@ -748,7 +752,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        createToggle(contentESP, "✨ HOLOGRAM", "Efek neon merah tembus dinding", merah, function(s)
+        createToggle(contentESP, "✨ HOLOGRAM", "Tembus dinding + efek merah (Highlight)", merah, function(s)
             hologramEnabled = s
             if s then
                 applyHologramToAll()
