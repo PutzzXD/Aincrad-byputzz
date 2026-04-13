@@ -1,4 +1,4 @@
--- ================== AINCRAD V1.4 ==================
+-- ================== AINCRAD V1.5 ==================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -17,7 +17,7 @@ local merah = Color3.fromRGB(255, 80, 80)
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
-local MAX_DIST = 150
+local MAX_DIST = 115   -- untuk ESP BOX dan NAME
 
 -- ESP vars
 local espLineEnabled = false
@@ -39,6 +39,9 @@ local godModeConn = nil
 local speedEnabled = false
 local defaultSpeed = 16
 local boostSpeed = 70
+
+local infJumpEnabled = false
+local infJumpConn = nil
 
 -- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
@@ -108,7 +111,7 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP LINE ==================
+-- ================== ESP LINE (tanpa batas jarak) ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -118,7 +121,7 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX ==================
+-- ================== ESP BOX (dengan batas jarak) ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -149,14 +152,15 @@ end
 local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
+    
+    -- ESP LINE (tanpa batas jarak)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
         if char and char:FindFirstChild("HumanoidRootPart") and myPos and espLineEnabled then
             local hrp = char.HumanoidRootPart
             local pos, vis = Camera:WorldToViewportPoint(hrp.Position)
-            local dist = (myPos - hrp.Position).Magnitude
-            if vis and dist <= MAX_DIST then
+            if vis then   -- tanpa pengecekan jarak
                 line.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 line.To = Vector2.new(pos.X, pos.Y)
                 line.Visible = true
@@ -167,6 +171,8 @@ local function updateESP()
             line.Visible = false
         end
     end
+    
+    -- ESP BOX (dengan batas jarak)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -190,6 +196,8 @@ local function updateESP()
             box.Visible = false
         end
     end
+    
+    -- NAME (mengikuti BOX)
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -272,6 +280,22 @@ local function setSpeed(enabled)
     if hum then
         hum.WalkSpeed = enabled and boostSpeed or defaultSpeed
     end
+end
+
+-- ================== INFINITY JUMP ==================
+local function updateInfJump()
+    if infJumpConn then infJumpConn:Disconnect() end
+    infJumpConn = UserInputService.JumpRequest:Connect(function()
+        if infJumpEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end
+    end)
 end
 
 -- ================== GUI KEY ==================
@@ -775,6 +799,16 @@ VerifyBtn.MouseButton1Click:Connect(function()
         createToggle(contentMain, "SPEED 70", cyan, function(s)
             speedEnabled = s
             setSpeed(s)
+        end, false)
+        
+        createToggle(contentMain, "INFINITY JUMP", cyan, function(s)
+            infJumpEnabled = s
+            if s then
+                updateInfJump()
+            elseif infJumpConn then
+                infJumpConn:Disconnect()
+                infJumpConn = nil
+            end
         end, false)
         
         -- ESP tab
