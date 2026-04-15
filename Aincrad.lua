@@ -1,5 +1,5 @@
 -- ================== AINCRAD V1.5 ==================
--- Modifikasi: Tombol minimize, ikon toggle, menu utama "🔓 DRIP CLIENT"
+-- Modifikasi: Tombol minimize + tombol menu utama pakai image
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -747,7 +747,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             contentInfo.Visible = true
         end)
         
-        -- ================== FUNGSI TOGGLE (tanpa deskripsi) ==================
+        -- ================== FUNGSI TOGGLE ==================
         local function createToggle(parent, text, defaultColor, callback, defaultState)
             local frame = Instance.new("Frame")
             frame.Parent = parent
@@ -855,7 +855,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        -- INFO tab (tanpa toggle)
+        -- INFO tab
         local infoTextLabel = Instance.new("TextLabel")
         infoTextLabel.Parent = contentInfo
         infoTextLabel.Size = UDim2.new(1, 0, 1, 0)
@@ -867,21 +867,15 @@ VerifyBtn.MouseButton1Click:Connect(function()
         infoTextLabel.TextWrapped = true
         infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
         
-        -- Tombol toggle menu (di pojok kiri)
-        local menuBtn = Instance.new("TextButton")
+        -- ================== TOMBOL MENU UTAMA (IMAGE) ==================
+        local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
-        menuBtn.Size = UDim2.new(0, 110, 0, 40)
-        menuBtn.Position = UDim2.new(0, 10, 0.5, -20)
-        menuBtn.BackgroundColor3 = cyan
-        menuBtn.BackgroundTransparency = 0.2
-        menuBtn.Text = "🔓 DRIP CLIENT"
-        menuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        menuBtn.Font = Enum.Font.GothamBlack
-        menuBtn.TextSize = 12
-        menuBtn.Draggable = true
-        local menuCorner = Instance.new("UICorner")
-        menuCorner.Parent = menuBtn
-        menuCorner.CornerRadius = UDim.new(0, 12)
+        menuBtn.Size = UDim2.new(0, 50, 0, 50)
+        menuBtn.Position = UDim2.new(0, 10, 0.5, -25)
+        menuBtn.BackgroundTransparency = 1
+        menuBtn.Image = "rbxassetid://72495850369898"
+        menuBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
+        menuBtn.ZIndex = 10
         
         local menuVisible = true
         menuBtn.MouseButton1Click:Connect(function()
