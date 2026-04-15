@@ -1,5 +1,5 @@
--- ================== AINCRAD V1.5 ==================
--- Modifikasi: Tombol minimize + tombol menu utama pakai image
+-- ================== DRIP CLIENT V1.0 ==================
+-- Modifikasi: Nama menu, tanpa emoji toggle, ESP line putih, ESP box tebal hijau, tambah health bar vertikal
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,7 +12,8 @@ local HttpService = game:GetService("HttpService")
 local cyan = Color3.fromRGB(0, 255, 255)
 local dark = Color3.fromRGB(8, 8, 12)
 local gray = Color3.fromRGB(25, 25, 35)
-local hijau = Color3.fromRGB(0, 200, 0)
+local hijau = Color3.fromRGB(0, 255, 0)      -- hijau lebih terang
+local putih = Color3.fromRGB(255, 255, 255)  -- untuk ESP line
 local merah = Color3.fromRGB(255, 80, 80)
 
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
@@ -28,6 +29,7 @@ local hologramEnabled = false
 local espLines = {}
 local espBoxes = {}
 local espNames = {}
+local espHealthBars = {}  -- tambahan untuk health bar
 
 local hologramHighlights = {}
 
@@ -112,25 +114,26 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP LINE (tanpa batas jarak) ==================
+-- ================== ESP LINE (warna putih, tanpa batas jarak) ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
     line.Thickness = 2
-    line.Color = cyan
+    line.Color = putih
     line.Visible = false
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX (dengan batas jarak) ==================
+-- ================== ESP BOX (hijau tebal, thickness 3) ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
-    box.Thickness = 2
+    box.Thickness = 3
     box.Color = hijau
     box.Filled = false
     box.Visible = false
     table.insert(espBoxes, {box, player})
+    
     local name = Drawing.new("Text")
     name.Size = 13
     name.Color = Color3.fromRGB(255, 255, 255)
@@ -139,21 +142,32 @@ local function createBox(player)
     name.OutlineColor = Color3.fromRGB(0, 0, 0)
     name.Visible = false
     table.insert(espNames, {name, player})
+    
+    -- Health bar (vertikal di samping kanan box)
+    local healthBar = Drawing.new("Square")
+    healthBar.Thickness = 0
+    healthBar.Color = Color3.fromRGB(0, 255, 0)
+    healthBar.Filled = true
+    healthBar.Visible = false
+    table.insert(espHealthBars, {healthBar, player})
 end
 
 local function clearESP()
     for _, v in pairs(espLines) do pcall(function() v[1]:Remove() end) end
     for _, v in pairs(espBoxes) do pcall(function() v[1]:Remove() end) end
     for _, v in pairs(espNames) do pcall(function() v[1]:Remove() end) end
+    for _, v in pairs(espHealthBars) do pcall(function() v[1]:Remove() end) end
     espLines = {}
     espBoxes = {}
     espNames = {}
+    espHealthBars = {}
 end
 
 local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
-    -- ESP LINE (tanpa batas jarak)
+    
+    -- ESP LINE (putih, tanpa batas jarak)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -171,7 +185,8 @@ local function updateESP()
             line.Visible = false
         end
     end
-    -- ESP BOX (dengan batas jarak)
+    
+    -- ESP BOX (hijau tebal, dengan batas jarak)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -195,6 +210,7 @@ local function updateESP()
             box.Visible = false
         end
     end
+    
     -- NAME (mengikuti BOX)
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
@@ -214,6 +230,41 @@ local function updateESP()
             end
         else
             name.Visible = false
+        end
+    end
+    
+    -- HEALTH BAR (vertikal di samping kanan box, dari kaki sampai kepala)
+    for _, data in pairs(espHealthBars) do
+        local healthBar, player = data[1], data[2]
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and myPos and espBoxEnabled then
+            local hrp = char.HumanoidRootPart
+            local head = char.Head
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            local pos, vis = Camera:WorldToViewportPoint(hrp.Position)
+            local dist = (myPos - hrp.Position).Magnitude
+            if vis and dist <= MAX_DIST and humanoid then
+                local top = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local bottom = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                local height = math.abs(top.Y - bottom.Y)
+                local width = height / 2
+                local healthPercent = humanoid.Health / humanoid.MaxHealth
+                
+                -- Health bar vertikal di samping kanan box
+                local barWidth = 6
+                local barHeight = height * healthPercent
+                local barX = pos.X + width/2 + 2
+                local barY = bottom.Y - (height * healthPercent)
+                
+                healthBar.Size = Vector2.new(barWidth, barHeight)
+                healthBar.Position = Vector2.new(barX, barY)
+                healthBar.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
+                healthBar.Visible = true
+            else
+                healthBar.Visible = false
+            end
+        else
+            healthBar.Visible = false
         end
     end
 end
@@ -298,7 +349,7 @@ end
 
 -- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
-KeyGui.Name = "AincradKey"
+KeyGui.Name = "DripClientKey"
 KeyGui.Parent = game.CoreGui
 
 local KeyFrame = Instance.new("Frame")
@@ -340,7 +391,7 @@ KeyTitle.Parent = KeyFrame
 KeyTitle.Size = UDim2.new(1, 0, 0, 30)
 KeyTitle.Position = UDim2.new(0, 0, 0, 75)
 KeyTitle.BackgroundTransparency = 1
-KeyTitle.Text = "AINCRAD"
+KeyTitle.Text = "DRIP CLIENT"
 KeyTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
 KeyTitle.Font = Enum.Font.GothamBold
 KeyTitle.TextSize = 20
@@ -510,7 +561,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         nt.Parent = nf
         nt.Size = UDim2.new(1, 0, 1, 0)
         nt.BackgroundTransparency = 1
-        nt.Text = "✅ AINCRAD ACTIVATED!"
+        nt.Text = "✅ DRIP CLIENT ACTIVATED!"
         nt.TextColor3 = Color3.fromRGB(255, 255, 255)
         nt.Font = Enum.Font.GothamBold
         nt.TextSize = 16
@@ -519,7 +570,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         -- ================== MENU UTAMA ==================
         local MenuGui = Instance.new("ScreenGui")
-        MenuGui.Name = "Aincrad"
+        MenuGui.Name = "DripClient"
         MenuGui.Parent = game.CoreGui
         
         local MainFrame = Instance.new("Frame")
@@ -561,7 +612,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Parent = Header
         Title.Size = UDim2.new(1, 0, 1, 0)
         Title.BackgroundTransparency = 1
-        Title.Text = "AINCRAD"
+        Title.Text = "DRIP CLIENT"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
@@ -747,7 +798,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             contentInfo.Visible = true
         end)
         
-        -- ================== FUNGSI TOGGLE ==================
+        -- ================== FUNGSI TOGGLE (tanpa emoji) ==================
         local function createToggle(parent, text, defaultColor, callback, defaultState)
             local frame = Instance.new("Frame")
             frame.Parent = parent
@@ -804,23 +855,23 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
-        -- MAIN tab
-        createToggle(contentMain, "🌀 NOCLIP", cyan, function(s)
+        -- MAIN tab (tanpa emoji)
+        createToggle(contentMain, "NOCLIP", cyan, function(s)
             noclipEnabled = s
             if s then updateNoclip() end
         end, false)
         
-        createToggle(contentMain, "💀 GOD MODE", cyan, function(s)
+        createToggle(contentMain, "GOD MODE", cyan, function(s)
             godModeEnabled = s
             if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
         end, false)
         
-        createToggle(contentMain, "⚡ SPEED 70", cyan, function(s)
+        createToggle(contentMain, "SPEED 70", cyan, function(s)
             speedEnabled = s
             setSpeed(s)
         end, false)
         
-        createToggle(contentMain, "🦘 INFINITY JUMP", cyan, function(s)
+        createToggle(contentMain, "INFINITY JUMP", cyan, function(s)
             infJumpEnabled = s
             if s then
                 updateInfJump()
@@ -830,23 +881,24 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        -- ESP tab
-        createToggle(contentESP, "📏 ESP LINE", cyan, function(s)
+        -- ESP tab (tanpa emoji)
+        createToggle(contentESP, "ESP LINE", putih, function(s)
             espLineEnabled = s
             if not s then
                 for _, v in pairs(espLines) do v[1].Visible = false end
             end
         end, false)
         
-        createToggle(contentESP, "📦 ESP BOX", hijau, function(s)
+        createToggle(contentESP, "ESP BOX", hijau, function(s)
             espBoxEnabled = s
             if not s then
                 for _, v in pairs(espBoxes) do v[1].Visible = false end
                 for _, v in pairs(espNames) do v[1].Visible = false end
+                for _, v in pairs(espHealthBars) do v[1].Visible = false end
             end
         end, false)
         
-        createToggle(contentESP, "✨ HOLOGRAM", merah, function(s)
+        createToggle(contentESP, "HOLOGRAM", merah, function(s)
             hologramEnabled = s
             if s then
                 applyHologramToAll()
@@ -860,14 +912,14 @@ VerifyBtn.MouseButton1Click:Connect(function()
         infoTextLabel.Parent = contentInfo
         infoTextLabel.Size = UDim2.new(1, 0, 1, 0)
         infoTextLabel.BackgroundTransparency = 1
-        infoTextLabel.Text = "AINCRAD\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
+        infoTextLabel.Text = "DRIP CLIENT\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
         infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         infoTextLabel.Font = Enum.Font.Gotham
         infoTextLabel.TextSize = 14
         infoTextLabel.TextWrapped = true
         infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
         
-        -- ================== TOMBOL MENU UTAMA (IMAGE) ==================
+        -- Tombol menu utama (image)
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
