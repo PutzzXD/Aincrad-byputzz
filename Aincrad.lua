@@ -1,4 +1,5 @@
 -- ================== AINCRAD V1.5 ==================
+-- Modifikasi: Tombol minimize, ikon toggle, menu utama "🔓 DRIP CLIENT"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -17,7 +18,7 @@ local merah = Color3.fromRGB(255, 80, 80)
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
-local MAX_DIST = 115   -- untuk ESP BOX dan NAME
+local MAX_DIST = 115
 
 -- ESP vars
 local espLineEnabled = false
@@ -152,7 +153,6 @@ end
 local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
-    
     -- ESP LINE (tanpa batas jarak)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
@@ -160,7 +160,7 @@ local function updateESP()
         if char and char:FindFirstChild("HumanoidRootPart") and myPos and espLineEnabled then
             local hrp = char.HumanoidRootPart
             local pos, vis = Camera:WorldToViewportPoint(hrp.Position)
-            if vis then   -- tanpa pengecekan jarak
+            if vis then
                 line.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 line.To = Vector2.new(pos.X, pos.Y)
                 line.Visible = true
@@ -171,7 +171,6 @@ local function updateESP()
             line.Visible = false
         end
     end
-    
     -- ESP BOX (dengan batas jarak)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
@@ -196,7 +195,6 @@ local function updateESP()
             box.Visible = false
         end
     end
-    
     -- NAME (mengikuti BOX)
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
@@ -568,6 +566,27 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
+        -- Tombol minimize dengan image
+        local minimizeBtn = Instance.new("ImageButton")
+        minimizeBtn.Parent = Header
+        minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+        minimizeBtn.Position = UDim2.new(1, -35, 0, 15)
+        minimizeBtn.BackgroundTransparency = 1
+        minimizeBtn.Image = "rbxassetid://72495850369898"
+        minimizeBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
+        minimizeBtn.ZIndex = 10
+        
+        local minimized = false
+        minimizeBtn.MouseButton1Click:Connect(function()
+            minimized = not minimized
+            MainFrame.Visible = not minimized
+            if minimized then
+                MainFrame.Size = UDim2.new(0, 360, 0, 60)
+            else
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+            end
+        end)
+        
         local Subtitle = Instance.new("TextLabel")
         Subtitle.Parent = Header
         Subtitle.Size = UDim2.new(1, 0, 0, 20)
@@ -786,22 +805,22 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end
         
         -- MAIN tab
-        createToggle(contentMain, "NOCLIP", cyan, function(s)
+        createToggle(contentMain, "🌀 NOCLIP", cyan, function(s)
             noclipEnabled = s
             if s then updateNoclip() end
         end, false)
         
-        createToggle(contentMain, "GOD MODE", cyan, function(s)
+        createToggle(contentMain, "💀 GOD MODE", cyan, function(s)
             godModeEnabled = s
             if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
         end, false)
         
-        createToggle(contentMain, "SPEED 70", cyan, function(s)
+        createToggle(contentMain, "⚡ SPEED 70", cyan, function(s)
             speedEnabled = s
             setSpeed(s)
         end, false)
         
-        createToggle(contentMain, "INFINITY JUMP", cyan, function(s)
+        createToggle(contentMain, "🦘 INFINITY JUMP", cyan, function(s)
             infJumpEnabled = s
             if s then
                 updateInfJump()
@@ -812,14 +831,14 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end, false)
         
         -- ESP tab
-        createToggle(contentESP, "ESP LINE", cyan, function(s)
+        createToggle(contentESP, "📏 ESP LINE", cyan, function(s)
             espLineEnabled = s
             if not s then
                 for _, v in pairs(espLines) do v[1].Visible = false end
             end
         end, false)
         
-        createToggle(contentESP, "ESP BOX", hijau, function(s)
+        createToggle(contentESP, "📦 ESP BOX", hijau, function(s)
             espBoxEnabled = s
             if not s then
                 for _, v in pairs(espBoxes) do v[1].Visible = false end
@@ -827,7 +846,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        createToggle(contentESP, "HOLOGRAM", merah, function(s)
+        createToggle(contentESP, "✨ HOLOGRAM", merah, function(s)
             hologramEnabled = s
             if s then
                 applyHologramToAll()
@@ -848,17 +867,17 @@ VerifyBtn.MouseButton1Click:Connect(function()
         infoTextLabel.TextWrapped = true
         infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
         
-        -- Tombol toggle menu
+        -- Tombol toggle menu (di pojok kiri)
         local menuBtn = Instance.new("TextButton")
         menuBtn.Parent = MenuGui
-        menuBtn.Size = UDim2.new(0, 90, 0, 40)
+        menuBtn.Size = UDim2.new(0, 110, 0, 40)
         menuBtn.Position = UDim2.new(0, 10, 0.5, -20)
         menuBtn.BackgroundColor3 = cyan
         menuBtn.BackgroundTransparency = 0.2
-        menuBtn.Text = "AINCRAD"
+        menuBtn.Text = "🔓 DRIP CLIENT"
         menuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         menuBtn.Font = Enum.Font.GothamBlack
-        menuBtn.TextSize = 13
+        menuBtn.TextSize = 12
         menuBtn.Draggable = true
         local menuCorner = Instance.new("UICorner")
         menuCorner.Parent = menuBtn
@@ -869,6 +888,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
             else
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
