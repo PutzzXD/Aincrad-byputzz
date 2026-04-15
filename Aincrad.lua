@@ -1,5 +1,5 @@
--- ================== DRIP CLIENT V1.0 ==================
--- Modifikasi: Nama menu, tanpa emoji toggle, ESP line putih, ESP box tebal hijau, tambah health bar vertikal
+-- ================== DRIP CLIENT V1.1 ==================
+-- Perubahan: ESP box ketebalan 2.2, ESP line ke head, warna menu ungu, tombol menu bisa digeser
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,12 +9,13 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 
-local cyan = Color3.fromRGB(0, 255, 255)
+-- Warna menu ungu
+local ungu = Color3.fromRGB(128, 0, 255)      -- ungu utama
 local dark = Color3.fromRGB(8, 8, 12)
 local gray = Color3.fromRGB(25, 25, 35)
-local hijau = Color3.fromRGB(0, 255, 0)      -- hijau lebih terang
-local putih = Color3.fromRGB(255, 255, 255)  -- untuk ESP line
-local merah = Color3.fromRGB(255, 80, 80)
+local hijau = Color3.fromRGB(0, 255, 0)       -- hijau terang untuk box
+local putih = Color3.fromRGB(255, 255, 255)   -- putih untuk line
+local merah = Color3.fromRGB(255, 80, 80)     -- merah untuk hologram
 
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
@@ -29,7 +30,7 @@ local hologramEnabled = false
 local espLines = {}
 local espBoxes = {}
 local espNames = {}
-local espHealthBars = {}  -- tambahan untuk health bar
+local espHealthBars = {}
 
 local hologramHighlights = {}
 
@@ -114,7 +115,7 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP LINE (warna putih, tanpa batas jarak) ==================
+-- ================== ESP LINE (putih, dari atas ke HEAD) ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -124,11 +125,11 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX (hijau tebal, thickness 3) ==================
+-- ================== ESP BOX (hijau, ketebalan 2.2) ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
-    box.Thickness = 3
+    box.Thickness = 2.2
     box.Color = hijau
     box.Filled = false
     box.Visible = false
@@ -143,7 +144,7 @@ local function createBox(player)
     name.Visible = false
     table.insert(espNames, {name, player})
     
-    -- Health bar (vertikal di samping kanan box)
+    -- Health bar vertikal di samping kanan box
     local healthBar = Drawing.new("Square")
     healthBar.Thickness = 0
     healthBar.Color = Color3.fromRGB(0, 255, 0)
@@ -167,13 +168,13 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE (putih, tanpa batas jarak)
+    -- ESP LINE (ke HEAD player)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
-        if char and char:FindFirstChild("HumanoidRootPart") and myPos and espLineEnabled then
-            local hrp = char.HumanoidRootPart
-            local pos, vis = Camera:WorldToViewportPoint(hrp.Position)
+        if char and char:FindFirstChild("Head") and myPos and espLineEnabled then
+            local head = char.Head
+            local pos, vis = Camera:WorldToViewportPoint(head.Position)
             if vis then
                 line.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 line.To = Vector2.new(pos.X, pos.Y)
@@ -186,7 +187,7 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX (hijau tebal, dengan batas jarak)
+    -- ESP BOX (dari kepala ke kaki)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -211,7 +212,7 @@ local function updateESP()
         end
     end
     
-    -- NAME (mengikuti BOX)
+    -- NAME
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -233,7 +234,7 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR (vertikal di samping kanan box, dari kaki sampai kepala)
+    -- HEALTH BAR (vertikal di samping kanan box)
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -249,13 +250,10 @@ local function updateESP()
                 local height = math.abs(top.Y - bottom.Y)
                 local width = height / 2
                 local healthPercent = humanoid.Health / humanoid.MaxHealth
-                
-                -- Health bar vertikal di samping kanan box
                 local barWidth = 6
                 local barHeight = height * healthPercent
                 local barX = pos.X + width/2 + 2
                 local barY = bottom.Y - (height * healthPercent)
-                
                 healthBar.Size = Vector2.new(barWidth, barHeight)
                 healthBar.Position = Vector2.new(barX, barY)
                 healthBar.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
@@ -371,7 +369,7 @@ KeyBorder.Parent = KeyFrame
 KeyBorder.Size = UDim2.new(1, 0, 1, 0)
 KeyBorder.BackgroundTransparency = 1
 KeyBorder.BorderSizePixel = 2
-KeyBorder.BorderColor3 = cyan
+KeyBorder.BorderColor3 = ungu
 local KeyBorderCorner = Instance.new("UICorner")
 KeyBorderCorner.Parent = KeyBorder
 KeyBorderCorner.CornerRadius = UDim.new(0, 20)
@@ -382,7 +380,7 @@ KeyIcon.Size = UDim2.new(1, 0, 0, 70)
 KeyIcon.Position = UDim2.new(0, 0, 0, 15)
 KeyIcon.BackgroundTransparency = 1
 KeyIcon.Text = "🔐"
-KeyIcon.TextColor3 = cyan
+KeyIcon.TextColor3 = ungu
 KeyIcon.Font = Enum.Font.GothamBlack
 KeyIcon.TextSize = 45
 
@@ -425,7 +423,7 @@ KeyLabel.Size = UDim2.new(0.8, 0, 0, 20)
 KeyLabel.Position = UDim2.new(0.1, 0, 0.52, 0)
 KeyLabel.BackgroundTransparency = 1
 KeyLabel.Text = "MASUKAN KEY ANDA"
-KeyLabel.TextColor3 = cyan
+KeyLabel.TextColor3 = ungu
 KeyLabel.Font = Enum.Font.GothamBold
 KeyLabel.TextSize = 12
 
@@ -449,7 +447,7 @@ local VerifyBtn = Instance.new("TextButton")
 VerifyBtn.Parent = KeyFrame
 VerifyBtn.Size = UDim2.new(0.8, 0, 0, 45)
 VerifyBtn.Position = UDim2.new(0.1, 0, 0.72, 0)
-VerifyBtn.BackgroundColor3 = cyan
+VerifyBtn.BackgroundColor3 = ungu
 VerifyBtn.BackgroundTransparency = 0.2
 VerifyBtn.Text = "VERIFIKASI KEY"
 VerifyBtn.TextColor3 = Color3.new(1, 1, 1)
@@ -487,7 +485,7 @@ local LoadingCircle = Instance.new("Frame")
 LoadingCircle.Parent = KeyFrame
 LoadingCircle.Size = UDim2.new(0, 25, 0, 25)
 LoadingCircle.Position = UDim2.new(0.5, -12, 0.96, -12)
-LoadingCircle.BackgroundColor3 = cyan
+LoadingCircle.BackgroundColor3 = ungu
 LoadingCircle.BackgroundTransparency = 1
 LoadingCircle.Visible = false
 local CircleCorner = Instance.new("UICorner")
@@ -593,7 +591,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Border.Size = UDim2.new(1, 0, 1, 0)
         Border.BackgroundTransparency = 1
         Border.BorderSizePixel = 2
-        Border.BorderColor3 = cyan
+        Border.BorderColor3 = ungu
         local BorderCorner = Instance.new("UICorner")
         BorderCorner.Parent = Border
         BorderCorner.CornerRadius = UDim.new(0, 20)
@@ -601,7 +599,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         local Header = Instance.new("Frame")
         Header.Parent = MainFrame
         Header.Size = UDim2.new(1, 0, 0, 60)
-        Header.BackgroundColor3 = cyan
+        Header.BackgroundColor3 = ungu
         Header.BackgroundTransparency = 0.15
         Header.BorderSizePixel = 0
         local HeaderCorner = Instance.new("UICorner")
@@ -617,7 +615,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
-        -- Tombol minimize dengan image
+        -- Tombol minimize dengan image (tidak bisa digeser, biarkan)
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -644,7 +642,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Subtitle.Position = UDim2.new(0, 0, 0, 40)
         Subtitle.BackgroundTransparency = 1
         Subtitle.Text = ""
-        Subtitle.TextColor3 = cyan
+        Subtitle.TextColor3 = ungu
         Subtitle.Font = Enum.Font.Gotham
         Subtitle.TextSize = 11
         
@@ -664,7 +662,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         tabMain.Parent = TabBar
         tabMain.Size = UDim2.new(0.33, -2, 1, -4)
         tabMain.Position = UDim2.new(0, 2, 0, 2)
-        tabMain.BackgroundColor3 = cyan
+        tabMain.BackgroundColor3 = ungu
         tabMain.BackgroundTransparency = 0.3
         tabMain.Text = "MAIN"
         tabMain.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -711,7 +709,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         contentMain.BackgroundTransparency = 0.4
         contentMain.BorderSizePixel = 0
         contentMain.ScrollBarThickness = 5
-        contentMain.ScrollBarImageColor3 = cyan
+        contentMain.ScrollBarImageColor3 = ungu
         contentMain.CanvasSize = UDim2.new(0, 0, 0, 0)
         contentMain.AutomaticCanvasSize = Enum.AutomaticSize.Y
         local contentMainCorner = Instance.new("UICorner")
@@ -730,7 +728,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         contentESP.BackgroundTransparency = 0.4
         contentESP.BorderSizePixel = 0
         contentESP.ScrollBarThickness = 5
-        contentESP.ScrollBarImageColor3 = cyan
+        contentESP.ScrollBarImageColor3 = ungu
         contentESP.CanvasSize = UDim2.new(0, 0, 0, 0)
         contentESP.AutomaticCanvasSize = Enum.AutomaticSize.Y
         contentESP.Visible = false
@@ -756,7 +754,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         -- Tab switching
         tabMain.MouseButton1Click:Connect(function()
-            tabMain.BackgroundColor3 = cyan
+            tabMain.BackgroundColor3 = ungu
             tabMain.BackgroundTransparency = 0.3
             tabMain.TextColor3 = Color3.fromRGB(255, 255, 255)
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
@@ -770,7 +768,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             contentInfo.Visible = false
         end)
         tabESP.MouseButton1Click:Connect(function()
-            tabESP.BackgroundColor3 = cyan
+            tabESP.BackgroundColor3 = ungu
             tabESP.BackgroundTransparency = 0.3
             tabESP.TextColor3 = Color3.fromRGB(255, 255, 255)
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
@@ -784,7 +782,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             contentInfo.Visible = false
         end)
         tabInfo.MouseButton1Click:Connect(function()
-            tabInfo.BackgroundColor3 = cyan
+            tabInfo.BackgroundColor3 = ungu
             tabInfo.BackgroundTransparency = 0.3
             tabInfo.TextColor3 = Color3.fromRGB(255, 255, 255)
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
@@ -798,7 +796,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             contentInfo.Visible = true
         end)
         
-        -- ================== FUNGSI TOGGLE (tanpa emoji) ==================
+        -- ================== FUNGSI TOGGLE ==================
         local function createToggle(parent, text, defaultColor, callback, defaultState)
             local frame = Instance.new("Frame")
             frame.Parent = parent
@@ -855,23 +853,23 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
-        -- MAIN tab (tanpa emoji)
-        createToggle(contentMain, "NOCLIP", cyan, function(s)
+        -- MAIN tab
+        createToggle(contentMain, "NOCLIP", ungu, function(s)
             noclipEnabled = s
             if s then updateNoclip() end
         end, false)
         
-        createToggle(contentMain, "GOD MODE", cyan, function(s)
+        createToggle(contentMain, "GOD MODE", ungu, function(s)
             godModeEnabled = s
             if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
         end, false)
         
-        createToggle(contentMain, "SPEED 70", cyan, function(s)
+        createToggle(contentMain, "SPEED 70", ungu, function(s)
             speedEnabled = s
             setSpeed(s)
         end, false)
         
-        createToggle(contentMain, "INFINITY JUMP", cyan, function(s)
+        createToggle(contentMain, "INFINITY JUMP", ungu, function(s)
             infJumpEnabled = s
             if s then
                 updateInfJump()
@@ -881,7 +879,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end, false)
         
-        -- ESP tab (tanpa emoji)
+        -- ESP tab
         createToggle(contentESP, "ESP LINE", putih, function(s)
             espLineEnabled = s
             if not s then
@@ -919,7 +917,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         infoTextLabel.TextWrapped = true
         infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
         
-        -- Tombol menu utama (image)
+        -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -928,6 +926,37 @@ VerifyBtn.MouseButton1Click:Connect(function()
         menuBtn.Image = "rbxassetid://72495850369898"
         menuBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
         menuBtn.ZIndex = 10
+        
+        -- Fungsi drag untuk tombol menu
+        local dragging = false
+        local dragStart = nil
+        local startPos = nil
+        
+        menuBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = menuBtn.Position
+            end
+        end)
+        
+        menuBtn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+        
+        menuBtn.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                local newX = startPos.X.Offset + delta.X
+                local newY = startPos.Y.Offset + delta.Y
+                -- Batasi agar tidak keluar layar (opsional)
+                newX = math.clamp(newX, 0, Camera.ViewportSize.X - menuBtn.AbsoluteSize.X)
+                newY = math.clamp(newY, 0, Camera.ViewportSize.Y - menuBtn.AbsoluteSize.Y)
+                menuBtn.Position = UDim2.new(0, newX, 0, newY)
+            end
+        end)
         
         local menuVisible = true
         menuBtn.MouseButton1Click:Connect(function()
