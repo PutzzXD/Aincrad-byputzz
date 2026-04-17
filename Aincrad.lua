@@ -1,5 +1,6 @@
--- ================== DRIP CLIENT V1.1 ==================
--- Perubahan: ESP box ketebalan 2.2, ESP line ke head, warna menu ungu, tombol menu bisa digeser
+-- ================== DRIP CLIENT V1.2 ==================
+-- Fitur: ESP Line (putih ke head), ESP Box (hijau tebal 2.2), Health Bar vertikal, Hologram (highlight merah), Noclip, God Mode, Speed 70, Infinity Jump, Crosshair, Timer sisa key di tab INFO
+-- Warna menu ungu, tombol menu bisa digeser
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,18 +10,23 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 
--- Warna menu ungu
-local ungu = Color3.fromRGB(128, 0, 255)      -- ungu utama
+-- Warna
+local ungu = Color3.fromRGB(128, 0, 255)
 local dark = Color3.fromRGB(8, 8, 12)
 local gray = Color3.fromRGB(25, 25, 35)
-local hijau = Color3.fromRGB(0, 255, 0)       -- hijau terang untuk box
-local putih = Color3.fromRGB(255, 255, 255)   -- putih untuk line
-local merah = Color3.fromRGB(255, 80, 80)     -- merah untuk hologram
+local hijau = Color3.fromRGB(0, 255, 0)
+local putih = Color3.fromRGB(255, 255, 255)
+local merah = Color3.fromRGB(255, 80, 80)
 
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
 local MAX_DIST = 115
+
+-- Variabel key timer
+local keyExpiryTime = 0
+local keyType = ""
+local keyValid = false
 
 -- ESP vars
 local espLineEnabled = false
@@ -47,7 +53,11 @@ local boostSpeed = 70
 local infJumpEnabled = false
 local infJumpConn = nil
 
--- ================== FUNGSI CEK KEY ==================
+-- Crosshair
+local crosshairEnabled = false
+local crosshairObject = nil
+
+-- ================== FUNGSI CEK KEY (dengan jenis) ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -59,12 +69,13 @@ local function cekKey(key)
         if success2 and json then
             for _, k in pairs(json) do
                 if k.key and string.upper(k.key) == string.upper(key) then
-                    return true
+                    local jenis = k.jenis or "PERMANEN"
+                    return true, jenis
                 end
             end
         end
     end
-    return false
+    return false, nil
 end
 
 -- ================== HOLOGRAM (Highlight) ==================
@@ -144,7 +155,6 @@ local function createBox(player)
     name.Visible = false
     table.insert(espNames, {name, player})
     
-    -- Health bar vertikal di samping kanan box
     local healthBar = Drawing.new("Square")
     healthBar.Thickness = 0
     healthBar.Color = Color3.fromRGB(0, 255, 0)
@@ -168,7 +178,7 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE (ke HEAD player)
+    -- ESP LINE (ke HEAD)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -187,7 +197,7 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX (dari kepala ke kaki)
+    -- ESP BOX
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -343,6 +353,39 @@ local function updateInfJump()
             end
         end
     end)
+end
+
+-- ================== CROSSHAIR ==================
+local function createCrosshair()
+    if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "DripCrosshair"
+    gui.Parent = game.CoreGui
+    gui.ResetOnSpawn = false
+    local outer = Instance.new("Frame")
+    outer.Parent = gui
+    outer.Size = UDim2.new(0, 20, 0, 20)
+    outer.Position = UDim2.new(0.5, -10, 0.5, -10)
+    outer.BackgroundTransparency = 1
+    outer.BorderSizePixel = 2
+    outer.BorderColor3 = Color3.fromRGB(255, 255, 255)
+    local outerCorner = Instance.new("UICorner")
+    outerCorner.Parent = outer
+    outerCorner.CornerRadius = UDim.new(1, 0)
+    local dot = Instance.new("Frame")
+    dot.Parent = gui
+    dot.Size = UDim2.new(0, 4, 0, 4)
+    dot.Position = UDim2.new(0.5, -2, 0.5, -2)
+    dot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    dot.BorderSizePixel = 0
+    local dotCorner = Instance.new("UICorner")
+    dotCorner.Parent = dot
+    dotCorner.CornerRadius = UDim.new(1, 0)
+    crosshairObject = gui
+end
+
+local function removeCrosshair()
+    if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
 -- ================== GUI KEY ==================
@@ -530,11 +573,22 @@ VerifyBtn.MouseButton1Click:Connect(function()
     StatusLabel.Text = "⏳ Verifikasi..."
     StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
     VerifyBtn.Text = "⏳ VERIFIKASI..."
-    local valid = cekKey(key)
+    local valid, jenis = cekKey(key)
     showLoading(false)
     VerifyBtn.Text = "VERIFIKASI KEY"
     if valid then
-        StatusLabel.Text = "✅ KEY VALID!"
+        keyValid = true
+        keyType = jenis or "PERMANEN"
+        local currentTime = os.time()
+        if keyType == "1 JAM" then
+            keyExpiryTime = currentTime + 3600
+        elseif keyType == "1 HARI" then
+            keyExpiryTime = currentTime + 86400
+        else
+            keyExpiryTime = math.huge
+        end
+        
+        StatusLabel.Text = "✅ KEY VALID! (" .. keyType .. ")"
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
         TweenService:Create(KeyFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 100, 0)}):Play()
         task.wait(0.3)
@@ -615,7 +669,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
-        -- Tombol minimize dengan image (tidak bisa digeser, biarkan)
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -740,17 +793,25 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 10)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
-        local contentInfo = Instance.new("Frame")
+        local contentInfo = Instance.new("ScrollingFrame")
         contentInfo.Parent = MainFrame
         contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
         contentInfo.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentInfo.BackgroundColor3 = gray
         contentInfo.BackgroundTransparency = 0.4
         contentInfo.BorderSizePixel = 0
+        contentInfo.ScrollBarThickness = 5
+        contentInfo.ScrollBarImageColor3 = ungu
+        contentInfo.CanvasSize = UDim2.new(0, 0, 0, 0)
+        contentInfo.AutomaticCanvasSize = Enum.AutomaticSize.Y
         contentInfo.Visible = false
         local contentInfoCorner = Instance.new("UICorner")
         contentInfoCorner.Parent = contentInfo
         contentInfoCorner.CornerRadius = UDim.new(0, 12)
+        local layoutInfo = Instance.new("UIListLayout")
+        layoutInfo.Parent = contentInfo
+        layoutInfo.Padding = UDim.new(0, 10)
+        layoutInfo.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
         -- Tab switching
         tabMain.MouseButton1Click:Connect(function()
@@ -871,12 +932,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         createToggle(contentMain, "INFINITY JUMP", ungu, function(s)
             infJumpEnabled = s
-            if s then
-                updateInfJump()
-            elseif infJumpConn then
-                infJumpConn:Disconnect()
-                infJumpConn = nil
-            end
+            if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end
+        end, false)
+        
+        createToggle(contentMain, "CROSSHAIR", ungu, function(s)
+            crosshairEnabled = s
+            if s then createCrosshair() else removeCrosshair() end
         end, false)
         
         -- ESP tab
@@ -898,24 +959,78 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         createToggle(contentESP, "HOLOGRAM", merah, function(s)
             hologramEnabled = s
-            if s then
-                applyHologramToAll()
-            else
-                removeHologramFromAll()
-            end
+            if s then applyHologramToAll() else removeHologramFromAll() end
         end, false)
         
-        -- INFO tab
+        -- ================== TAB INFO (dengan timer key) ==================
+        -- Timer label
+        local timerLabel = Instance.new("TextLabel")
+        timerLabel.Parent = contentInfo
+        timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
+        timerLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        timerLabel.BackgroundTransparency = 0.2
+        timerLabel.Text = "Memuat sisa waktu..."
+        timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        timerLabel.Font = Enum.Font.GothamBold
+        timerLabel.TextSize = 14
+        timerLabel.TextWrapped = true
+        local timerCorner = Instance.new("UICorner")
+        timerCorner.Parent = timerLabel
+        timerCorner.CornerRadius = UDim.new(0, 10)
+        
+        -- Info developer
         local infoTextLabel = Instance.new("TextLabel")
         infoTextLabel.Parent = contentInfo
-        infoTextLabel.Size = UDim2.new(1, 0, 1, 0)
-        infoTextLabel.BackgroundTransparency = 1
+        infoTextLabel.Size = UDim2.new(0.95, 0, 0, 100)
+        infoTextLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        infoTextLabel.BackgroundTransparency = 0.2
         infoTextLabel.Text = "DRIP CLIENT\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
         infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         infoTextLabel.Font = Enum.Font.Gotham
         infoTextLabel.TextSize = 14
         infoTextLabel.TextWrapped = true
         infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
+        local infoCorner2 = Instance.new("UICorner")
+        infoCorner2.Parent = infoTextLabel
+        infoCorner2.CornerRadius = UDim.new(0, 10)
+        
+        -- Fungsi update timer setiap detik
+        local function updateKeyTimer()
+            if not keyValid then
+                timerLabel.Text = "Key tidak valid"
+                return
+            end
+            local remaining = keyExpiryTime - os.time()
+            if remaining <= 0 and keyExpiryTime ~= math.huge then
+                timerLabel.Text = "KEY EXPIRED!"
+                return
+            end
+            if keyExpiryTime == math.huge then
+                timerLabel.Text = "Sisa waktu: PERMANEN"
+                return
+            end
+            local hours = math.floor(remaining / 3600)
+            local minutes = math.floor((remaining % 3600) / 60)
+            local seconds = remaining % 60
+            if keyType == "1 JAM" then
+                timerLabel.Text = string.format("Sisa waktu: %02d:%02d:%02d (1 Jam)", hours, minutes, seconds)
+            elseif keyType == "1 HARI" then
+                local days = math.floor(remaining / 86400)
+                hours = math.floor((remaining % 86400) / 3600)
+                timerLabel.Text = string.format("Sisa waktu: %d hari %02d jam %02d menit", days, hours, minutes)
+            else
+                timerLabel.Text = "Sisa waktu: PERMANEN"
+            end
+        end
+        
+        -- Jalankan timer update setiap detik
+        task.spawn(function()
+            while keyValid and MainFrame and MainFrame.Parent do
+                updateKeyTimer()
+                task.wait(1)
+            end
+        end)
+        updateKeyTimer()
         
         -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
         local menuBtn = Instance.new("ImageButton")
@@ -927,7 +1042,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         menuBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
         menuBtn.ZIndex = 10
         
-        -- Fungsi drag untuk tombol menu
         local dragging = false
         local dragStart = nil
         local startPos = nil
@@ -951,7 +1065,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
                 local delta = input.Position - dragStart
                 local newX = startPos.X.Offset + delta.X
                 local newY = startPos.Y.Offset + delta.Y
-                -- Batasi agar tidak keluar layar (opsional)
                 newX = math.clamp(newX, 0, Camera.ViewportSize.X - menuBtn.AbsoluteSize.X)
                 newY = math.clamp(newY, 0, Camera.ViewportSize.Y - menuBtn.AbsoluteSize.Y)
                 menuBtn.Position = UDim2.new(0, newX, 0, newY)
