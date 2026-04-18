@@ -1,6 +1,9 @@
--- ================== DRIP CLIENT V1.2 ==================
--- Fitur: ESP Line (putih ke head), ESP Box (hijau tebal 2.2), Health Bar vertikal, Hologram (highlight merah), Noclip, God Mode, Speed 70, Infinity Jump, Crosshair, Timer sisa key di tab INFO
--- Warna menu ungu, tombol menu bisa digeser
+-- ================== DRIP CLIENT V1.3 ==================
+-- Fitur: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
+--        hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70,
+--        Infinity Jump, Crosshair di tengah layar, Timer sisa waktu key di tab INFO,
+--        Enemy counter di atas tengah layar (warna merah).
+--        Sistem key expired menyimpan data di Firebase (masa berlaku tetap berjalan).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,7 +13,7 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 
--- Warna
+-- Warna menu ungu
 local ungu = Color3.fromRGB(128, 0, 255)
 local dark = Color3.fromRGB(8, 8, 12)
 local gray = Color3.fromRGB(25, 25, 35)
@@ -23,10 +26,10 @@ local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
 local MAX_DIST = 115
 
--- Variabel key timer
+-- Variabel key timer (disimpan per key)
+local keyValid = false
 local keyExpiryTime = 0
 local keyType = ""
-local keyValid = false
 
 -- ESP vars
 local espLineEnabled = false
@@ -57,25 +60,93 @@ local infJumpConn = nil
 local crosshairEnabled = false
 local crosshairObject = nil
 
--- ================== FUNGSI CEK KEY (dengan jenis) ==================
+-- Enemy counter
+local enemyCounterText = nil
+local enemyCounterEnabled = true  -- selalu aktif, tidak perlu toggle
+
+-- ================== FUNGSI CEK KEY (dengan penyimpanan waktu) ==================
+-- Fungsi ini akan membaca/menyimpan data key ke Firebase
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
     end)
-    if success and data then
-        local success2, json = pcall(function()
-            return HttpService:JSONDecode(data)
-        end)
-        if success2 and json then
-            for _, k in pairs(json) do
-                if k.key and string.upper(k.key) == string.upper(key) then
-                    local jenis = k.jenis or "PERMANEN"
-                    return true, jenis
-                end
-            end
+    if not success or not data then
+        return false, "Gagal koneksi ke database!"
+    end
+    local success2, jsonData = pcall(function()
+        return HttpService:JSONDecode(data)
+    end)
+    if not success2 or not jsonData then
+        return false, "Gagal membaca database!"
+    end
+    
+    -- Cari key di database
+    local foundKeyData = nil
+    for id, keyData in pairs(jsonData) do
+        if keyData.key and string.upper(keyData.key) == string.upper(key) then
+            foundKeyData = keyData
+            break
         end
     end
-    return false, nil
+    if not foundKeyData then
+        return false, "KEY TIDAK TERDAFTAR!"
+    end
+    
+    -- Tentukan masa berlaku (dalam hari)
+    local jenis = foundKeyData.jenis or "PERMANEN"
+    local expiryDays = 0
+    if jenis == "1 JAM" then
+        expiryDays = 1/24
+    elseif jenis == "1 HARI" then
+        expiryDays = 1
+    elseif jenis == "PERMANEN" then
+        expiryDays = 999999
+    else
+        expiryDays = 1
+    end
+    
+    -- Cek apakah key sudah pernah digunakan (simpan firstUsed)
+    local firstUsed = foundKeyData.firstUsed
+    local currentTime = os.time()
+    
+    if not firstUsed then
+        -- Key baru, simpan firstUsed ke database
+        local keyId = nil
+        for id, kd in pairs(jsonData) do
+            if kd.key == foundKeyData.key then
+                keyId = id
+                break
+            end
+        end
+        if keyId then
+            local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
+            local updateData = {
+                firstUsed = currentTime,
+                expiryDays = expiryDays
+            }
+            pcall(function()
+                game:HttpGet(updateUrl .. "?method=PATCH", true)
+                -- Tidak perlu parsing response, kita asumsikan berhasil
+            end)
+        end
+        firstUsed = currentTime
+    end
+    
+    -- Hitung expiry time
+    local expiryTime = firstUsed + (expiryDays * 86400)
+    if expiryDays >= 999999 then
+        expiryTime = math.huge
+    end
+    
+    if currentTime > expiryTime and expiryTime ~= math.huge then
+        return false, "KEY SUDAH EXPIRED!"
+    end
+    
+    -- Simpan info ke variabel global
+    keyValid = true
+    keyExpiryTime = expiryTime
+    keyType = jenis
+    return true, "KEY VALID! (" .. jenis .. ")"
 end
 
 -- ================== HOLOGRAM (Highlight) ==================
@@ -178,7 +249,7 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE (ke HEAD)
+    -- ESP LINE (ke HEAD player)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -197,7 +268,7 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX
+    -- ESP BOX (dari kepala ke kaki)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -388,6 +459,41 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
+-- ================== ENEMY COUNTER (di atas tengah layar) ==================
+local function createEnemyCounter()
+    if enemyCounterText then pcall(function() enemyCounterText:Remove() end) end
+    enemyCounterText = Drawing.new("Text")
+    enemyCounterText.Size = 20
+    enemyCounterText.Color = Color3.fromRGB(255, 0, 0)  -- Merah
+    enemyCounterText.Center = true
+    enemyCounterText.Outline = true
+    enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
+    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
+    enemyCounterText.Visible = true
+    enemyCounterText.Text = "ENEMY: 0"
+end
+
+local function updateEnemyCounter()
+    if not enemyCounterText then return end
+    local count = 0
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+                -- Hitung semua player lain yang memiliki karakter lengkap
+                count = count + 1
+            end
+        end
+    end
+    enemyCounterText.Text = "ENEMY: " .. count
+    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
+end
+
+-- Update enemy counter setiap frame (atau setiap detik tidak masalah)
+RunService.RenderStepped:Connect(function()
+    updateEnemyCounter()
+end)
+
 -- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
 KeyGui.Name = "DripClientKey"
@@ -573,22 +679,11 @@ VerifyBtn.MouseButton1Click:Connect(function()
     StatusLabel.Text = "⏳ Verifikasi..."
     StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
     VerifyBtn.Text = "⏳ VERIFIKASI..."
-    local valid, jenis = cekKey(key)
+    local valid, message = cekKey(key)  -- fungsi cekKey sudah mengembalikan (boolean, string)
     showLoading(false)
     VerifyBtn.Text = "VERIFIKASI KEY"
     if valid then
-        keyValid = true
-        keyType = jenis or "PERMANEN"
-        local currentTime = os.time()
-        if keyType == "1 JAM" then
-            keyExpiryTime = currentTime + 3600
-        elseif keyType == "1 HARI" then
-            keyExpiryTime = currentTime + 86400
-        else
-            keyExpiryTime = math.huge
-        end
-        
-        StatusLabel.Text = "✅ KEY VALID! (" .. keyType .. ")"
+        StatusLabel.Text = "✅ " .. message
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
         TweenService:Create(KeyFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 100, 0)}):Play()
         task.wait(0.3)
@@ -598,6 +693,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end
         KeyGui:Destroy()
         initESP()
+        createEnemyCounter()  -- buat enemy counter
+        
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
         local nf = Instance.new("Frame")
@@ -669,6 +766,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
+        -- Tombol minimize dengan image
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -963,7 +1061,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end, false)
         
         -- ================== TAB INFO (dengan timer key) ==================
-        -- Timer label
         local timerLabel = Instance.new("TextLabel")
         timerLabel.Parent = contentInfo
         timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
@@ -978,7 +1075,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         timerCorner.Parent = timerLabel
         timerCorner.CornerRadius = UDim.new(0, 10)
         
-        -- Info developer
         local infoTextLabel = Instance.new("TextLabel")
         infoTextLabel.Parent = contentInfo
         infoTextLabel.Size = UDim2.new(0.95, 0, 0, 100)
@@ -994,7 +1090,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         infoCorner2.Parent = infoTextLabel
         infoCorner2.CornerRadius = UDim.new(0, 10)
         
-        -- Fungsi update timer setiap detik
+        -- Update timer setiap detik
         local function updateKeyTimer()
             if not keyValid then
                 timerLabel.Text = "Key tidak valid"
@@ -1023,7 +1119,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end
         end
         
-        -- Jalankan timer update setiap detik
         task.spawn(function()
             while keyValid and MainFrame and MainFrame.Parent do
                 updateKeyTimer()
@@ -1084,7 +1179,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end)
         
     else
-        StatusLabel.Text = "❌ KEY INVALID!"
+        StatusLabel.Text = "❌ " .. message
         StatusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         for i = 1, 3 do
             TweenService:Create(KeyFrame, TweenInfo.new(0.05), {BackgroundColor3 = Color3.fromRGB(100, 0, 0)}):Play()
