@@ -1,9 +1,8 @@
--- ================== DRIP CLIENT V1.3 ==================
--- Fitur: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
---        hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70,
---        Infinity Jump, Crosshair di tengah layar, Timer sisa waktu key di tab INFO,
---        Enemy counter di atas tengah layar (warna merah).
---        Sistem key expired menyimpan data di Firebase (masa berlaku tetap berjalan).
+-- ================== DRIP CLIENT V1.3 (FINAL) ==================
+-- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
+-- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
+-- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
+-- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -26,7 +25,7 @@ local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
 local MAX_DIST = 115
 
--- Variabel key timer (disimpan per key)
+-- Variabel key timer
 local keyValid = false
 local keyExpiryTime = 0
 local keyType = ""
@@ -62,10 +61,8 @@ local crosshairObject = nil
 
 -- Enemy counter
 local enemyCounterText = nil
-local enemyCounterEnabled = true  -- selalu aktif, tidak perlu toggle
 
--- ================== FUNGSI CEK KEY (dengan penyimpanan waktu) ==================
--- Fungsi ini akan membaca/menyimpan data key ke Firebase
+-- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -82,9 +79,11 @@ local function cekKey(key)
     
     -- Cari key di database
     local foundKeyData = nil
+    local keyId = nil
     for id, keyData in pairs(jsonData) do
         if keyData.key and string.upper(keyData.key) == string.upper(key) then
             foundKeyData = keyData
+            keyId = id
             break
         end
     end
@@ -92,7 +91,7 @@ local function cekKey(key)
         return false, "KEY TIDAK TERDAFTAR!"
     end
     
-    -- Tentukan masa berlaku (dalam hari)
+    -- Tentukan masa berlaku (dalam hari) berdasarkan jenis
     local jenis = foundKeyData.jenis or "PERMANEN"
     local expiryDays = 0
     if jenis == "1 JAM" then
@@ -105,31 +104,48 @@ local function cekKey(key)
         expiryDays = 1
     end
     
-    -- Cek apakah key sudah pernah digunakan (simpan firstUsed)
+    -- Ambil firstUsed dari database, jika tidak ada maka key baru
     local firstUsed = foundKeyData.firstUsed
     local currentTime = os.time()
     
     if not firstUsed then
-        -- Key baru, simpan firstUsed ke database
-        local keyId = nil
-        for id, kd in pairs(jsonData) do
-            if kd.key == foundKeyData.key then
-                keyId = id
-                break
-            end
-        end
-        if keyId then
-            local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
-            local updateData = {
-                firstUsed = currentTime,
-                expiryDays = expiryDays
-            }
+        -- Key baru: simpan firstUsed dan expiryDays ke Firebase menggunakan PATCH
+        firstUsed = currentTime
+        local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
+        local updateData = {
+            firstUsed = firstUsed,
+            expiryDays = expiryDays
+        }
+        local body = HttpService:JSONEncode(updateData)
+        -- Gunakan RequestAsync (atau fallback untuk executor yang tidak support)
+        local requestSuccess = false
+        if syn and syn.request then
+            local response = syn.request({
+                Url = updateUrl,
+                Method = "PATCH",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+            requestSuccess = (response and response.Success)
+        elseif http and http.request then
+            local response = http.request({
+                Url = updateUrl,
+                Method = "PATCH",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+            requestSuccess = (response and response.Success)
+        else
+            -- Fallback: pcall dengan HttpService (mungkin tidak berfungsi di semua executor)
             pcall(function()
-                game:HttpGet(updateUrl .. "?method=PATCH", true)
-                -- Tidak perlu parsing response, kita asumsikan berhasil
+                HttpService:RequestAsync({
+                    Url = updateUrl,
+                    Method = "PATCH",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = body
+                })
             end)
         end
-        firstUsed = currentTime
     end
     
     -- Hitung expiry time
@@ -459,12 +475,12 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
--- ================== ENEMY COUNTER (di atas tengah layar) ==================
+-- ================== ENEMY COUNTER ==================
 local function createEnemyCounter()
     if enemyCounterText then pcall(function() enemyCounterText:Remove() end) end
     enemyCounterText = Drawing.new("Text")
     enemyCounterText.Size = 20
-    enemyCounterText.Color = Color3.fromRGB(255, 0, 0)  -- Merah
+    enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
     enemyCounterText.Center = true
     enemyCounterText.Outline = true
     enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
@@ -480,7 +496,6 @@ local function updateEnemyCounter()
         if player ~= LocalPlayer then
             local char = player.Character
             if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-                -- Hitung semua player lain yang memiliki karakter lengkap
                 count = count + 1
             end
         end
@@ -489,10 +504,7 @@ local function updateEnemyCounter()
     enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
 end
 
--- Update enemy counter setiap frame (atau setiap detik tidak masalah)
-RunService.RenderStepped:Connect(function()
-    updateEnemyCounter()
-end)
+RunService.RenderStepped:Connect(updateEnemyCounter)
 
 -- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
@@ -679,7 +691,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
     StatusLabel.Text = "⏳ Verifikasi..."
     StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
     VerifyBtn.Text = "⏳ VERIFIKASI..."
-    local valid, message = cekKey(key)  -- fungsi cekKey sudah mengembalikan (boolean, string)
+    local valid, message = cekKey(key)
     showLoading(false)
     VerifyBtn.Text = "VERIFIKASI KEY"
     if valid then
@@ -693,7 +705,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end
         KeyGui:Destroy()
         initESP()
-        createEnemyCounter()  -- buat enemy counter
+        createEnemyCounter()
         
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
