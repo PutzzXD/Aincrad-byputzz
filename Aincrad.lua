@@ -1,8 +1,9 @@
--- ================== DRIP CLIENT V1.3 (FINAL) ==================
--- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
+-- ================== DRIP CLIENT V1.4 (FULL AIMBOT) ==================
+-- Fitur: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
 -- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
 -- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
--- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
+-- AIMBOT: membidik otomatis ke musuh terdekat dalam FOV (silent aim),
+-- FOV Changer slider, Timer sisa waktu key di tab INFO.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+local VirtualUser = game:GetService("VirtualUser")
 
 -- Warna menu ungu
 local ungu = Color3.fromRGB(128, 0, 255)
@@ -62,7 +64,119 @@ local crosshairObject = nil
 -- Enemy counter
 local enemyCounterText = nil
 
--- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
+-- ================== AIMBOT VARIABEL ==================
+local aimbotEnabled = false
+local aimbotPart = "Head"  -- "Head" atau "HumanoidRootPart"
+local aimbotFOV = 200  -- radius lingkaran aimbot (pixel), default 70% dari layar
+local aimbotMode = "Silent"  -- "Silent" atau "Normal"
+local aimFOVCircle = nil
+local aimbotKey = "MouseButton2"  -- MouseButton2 = kanan, MouseButton1 = kiri
+
+-- Fungsi untuk mendapatkan target terdekat dalam FOV
+local function getClosestTarget()
+    if not aimbotEnabled then return nil end
+    
+    local closest = nil
+    local shortestDist = aimbotFOV
+    local myChar = LocalPlayer.Character
+    local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
+    if not myPos then return nil end
+    
+    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild(aimbotPart) and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
+                local targetPart = char[aimbotPart]
+                local targetPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                if onScreen then
+                    local distance = (Vector2.new(targetPos.X, targetPos.Y) - screenCenter).Magnitude
+                    if distance < shortestDist then
+                        shortestDist = distance
+                        closest = player
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Fungsi Silent Aim (bidik tanpa menggerakkan kamera)
+local function silentAim()
+    local target = getClosestTarget()
+    if target and target.Character and target.Character:FindFirstChild(aimbotPart) then
+        local targetPart = target.Character[aimbotPart]
+        local targetPos = targetPart.Position
+        local viewportPoint = Camera:WorldToViewportPoint(targetPos)
+        
+        -- Set mouse position ke target
+        mousemoverel(viewportPoint.X - Camera.ViewportSize.X/2, viewportPoint.Y - Camera.ViewportSize.Y/2)
+    end
+end
+
+-- Normal Aim (bidik dengan menggerakkan kamera)
+local function normalAim()
+    local target = getClosestTarget()
+    if target and target.Character and target.Character:FindFirstChild(aimbotPart) then
+        local targetPart = target.Character[aimbotPart]
+        local targetPos = targetPart.Position
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
+    end
+end
+
+-- Auto shoot saat target dalam FOV dan menembak
+local function onShoot()
+    if not aimbotEnabled then return end
+    local target = getClosestTarget()
+    if target then
+        if aimbotMode == "Silent" then
+            silentAim()
+        else
+            normalAim()
+        end
+    end
+end
+
+-- Gambar lingkaran FOV di layar
+local function drawFOVCircle()
+    if aimFOVCircle then pcall(function() aimFOVCircle:Remove() end) end
+    aimFOVCircle = Drawing.new("Circle")
+    aimFOVCircle.Radius = aimbotFOV
+    aimFOVCircle.Thickness = 2
+    aimFOVCircle.Color = Color3.fromRGB(0, 255, 0)
+    aimFOVCircle.Filled = false
+    aimFOVCircle.NumSides = 64
+    aimFOVCircle.Transparency = 0.7
+    aimFOVCircle.Visible = aimbotEnabled
+    aimFOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+end
+
+-- Update posisi lingkaran FOV
+Camera:GetPropertyChangedSignal("ViewportSize"):Connect(drawFOVCircle)
+RunService.RenderStepped:Connect(function()
+    if aimFOVCircle then
+        aimFOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        aimFOVCircle.Visible = aimbotEnabled
+    end
+end)
+
+-- Tombol untuk aimbot (MouseButton2 = klik kanan)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if aimbotEnabled and input.UserInputType == Enum.UserInputType[aimbotKey] then
+        if aimbotMode == "Silent" then
+            silentAim()
+        else
+            normalAim()
+        end
+        -- Auto click jika ingin langsung nembak (opsional)
+        -- VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
+    end
+end)
+
+-- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -77,7 +191,6 @@ local function cekKey(key)
         return false, "Gagal membaca database!"
     end
     
-    -- Cari key di database
     local foundKeyData = nil
     local keyId = nil
     for id, keyData in pairs(jsonData) do
@@ -91,7 +204,6 @@ local function cekKey(key)
         return false, "KEY TIDAK TERDAFTAR!"
     end
     
-    -- Tentukan masa berlaku (dalam hari) berdasarkan jenis
     local jenis = foundKeyData.jenis or "PERMANEN"
     local expiryDays = 0
     if jenis == "1 JAM" then
@@ -104,12 +216,10 @@ local function cekKey(key)
         expiryDays = 1
     end
     
-    -- Ambil firstUsed dari database, jika tidak ada maka key baru
     local firstUsed = foundKeyData.firstUsed
     local currentTime = os.time()
     
     if not firstUsed then
-        -- Key baru: simpan firstUsed dan expiryDays ke Firebase menggunakan PATCH
         firstUsed = currentTime
         local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
         local updateData = {
@@ -117,26 +227,21 @@ local function cekKey(key)
             expiryDays = expiryDays
         }
         local body = HttpService:JSONEncode(updateData)
-        -- Gunakan RequestAsync (atau fallback untuk executor yang tidak support)
-        local requestSuccess = false
         if syn and syn.request then
-            local response = syn.request({
+            syn.request({
                 Url = updateUrl,
                 Method = "PATCH",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = body
             })
-            requestSuccess = (response and response.Success)
         elseif http and http.request then
-            local response = http.request({
+            http.request({
                 Url = updateUrl,
                 Method = "PATCH",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = body
             })
-            requestSuccess = (response and response.Success)
         else
-            -- Fallback: pcall dengan HttpService (mungkin tidak berfungsi di semua executor)
             pcall(function()
                 HttpService:RequestAsync({
                     Url = updateUrl,
@@ -148,7 +253,6 @@ local function cekKey(key)
         end
     end
     
-    -- Hitung expiry time
     local expiryTime = firstUsed + (expiryDays * 86400)
     if expiryDays >= 999999 then
         expiryTime = math.huge
@@ -158,7 +262,6 @@ local function cekKey(key)
         return false, "KEY SUDAH EXPIRED!"
     end
     
-    -- Simpan info ke variabel global
     keyValid = true
     keyExpiryTime = expiryTime
     keyType = jenis
@@ -213,7 +316,7 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP LINE (putih, dari atas ke HEAD) ==================
+-- ================== ESP LINE ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -223,7 +326,7 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX (hijau, ketebalan 2.2) ==================
+-- ================== ESP BOX ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -265,7 +368,7 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE (ke HEAD player)
+    -- ESP LINE
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -284,7 +387,7 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX (dari kepala ke kaki)
+    -- ESP BOX
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -331,7 +434,7 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR (vertikal di samping kanan box)
+    -- HEALTH BAR
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -706,6 +809,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         KeyGui:Destroy()
         initESP()
         createEnemyCounter()
+        drawFOVCircle()
         
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
@@ -735,9 +839,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         MenuGui.Parent = game.CoreGui
         
         local MainFrame = Instance.new("Frame")
-        MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 360, 0, 520)
-        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+        MainFrame.Parent = MenuGui        MainFrame.Size = UDim2.new(0, 360, 0, 560)
+        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -778,7 +881,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
-        -- Tombol minimize dengan image
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -795,7 +897,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if minimized then
                 MainFrame.Size = UDim2.new(0, 360, 0, 60)
             else
-                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+                MainFrame.Size = UDim2.new(0, 360, 0, 560)
             end
         end)
         
@@ -866,7 +968,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         -- Content panels
         local contentMain = Instance.new("ScrollingFrame")
         contentMain.Parent = MainFrame
-        contentMain.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentMain.Size = UDim2.new(0.94, 0, 0.76, 0)
         contentMain.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentMain.BackgroundColor3 = gray
         contentMain.BackgroundTransparency = 0.4
@@ -885,7 +987,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentESP = Instance.new("ScrollingFrame")
         contentESP.Parent = MainFrame
-        contentESP.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentESP.Size = UDim2.new(0.94, 0, 0.76, 0)
         contentESP.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentESP.BackgroundColor3 = gray
         contentESP.BackgroundTransparency = 0.4
@@ -905,7 +1007,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentInfo = Instance.new("ScrollingFrame")
         contentInfo.Parent = MainFrame
-        contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentInfo.Size = UDim2.new(0.94, 0, 0.76, 0)
         contentInfo.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentInfo.BackgroundColor3 = gray
         contentInfo.BackgroundTransparency = 0.4
@@ -1050,6 +1152,128 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then createCrosshair() else removeCrosshair() end
         end, false)
         
+        -- AIMBOT SECTION
+        createToggle(contentMain, "AIMBOT", ungu, function(s)
+            aimbotEnabled = s
+            drawFOVCircle()
+        end, false)
+        
+        -- Aimbot FOV Slider (70% dari layar = sekitar 200-250px)
+        local aimbotFOVSlider = Instance.new("Frame")
+        aimbotFOVSlider.Parent = contentMain
+        aimbotFOVSlider.Size = UDim2.new(0.95, 0, 0, 50)
+        aimbotFOVSlider.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        aimbotFOVSlider.BackgroundTransparency = 0.2
+        aimbotFOVSlider.BorderSizePixel = 0
+        local sliderCorner = Instance.new("UICorner")
+        sliderCorner.Parent = aimbotFOVSlider
+        sliderCorner.CornerRadius = UDim.new(0, 10)
+        
+        local fovLabel = Instance.new("TextLabel")
+        fovLabel.Parent = aimbotFOVSlider
+        fovLabel.Size = UDim2.new(0.4, 0, 1, 0)
+        fovLabel.Position = UDim2.new(0.05, 0, 0, 0)
+        fovLabel.BackgroundTransparency = 1
+        fovLabel.Text = "Aimbot FOV: " .. aimbotFOV
+        fovLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        fovLabel.Font = Enum.Font.Gotham
+        fovLabel.TextSize = 13
+        fovLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local fovSliderBar = Instance.new("Frame")
+        fovSliderBar.Parent = aimbotFOVSlider
+        fovSliderBar.Size = UDim2.new(0.35, 0, 0, 6)
+        fovSliderBar.Position = UDim2.new(0.55, 0, 0.5, -3)
+        fovSliderBar.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+        fovSliderBar.BorderSizePixel = 0
+        local fovBarCorner = Instance.new("UICorner")
+        fovBarCorner.Parent = fovSliderBar
+        fovBarCorner.CornerRadius = UDim.new(1, 0)
+        
+        local fovSliderFill = Instance.new("Frame")
+        fovSliderFill.Parent = fovSliderBar
+        fovSliderFill.Size = UDim2.new(aimbotFOV / 300, 0, 1, 0)
+        fovSliderFill.BackgroundColor3 = ungu
+        fovSliderFill.BorderSizePixel = 0
+        local fovFillCorner = Instance.new("UICorner")
+        fovFillCorner.Parent = fovSliderFill
+        fovFillCorner.CornerRadius = UDim.new(1, 0)
+        
+        local fovSliderBtn = Instance.new("TextButton")
+        fovSliderBtn.Parent = fovSliderBar
+        fovSliderBtn.Size = UDim2.new(0, 18, 0, 18)
+        fovSliderBtn.Position = UDim2.new(aimbotFOV / 300, -9, 0.5, -9)
+        fovSliderBtn.BackgroundColor3 = ungu
+        fovSliderBtn.BorderSizePixel = 0
+        fovSliderBtn.Text = ""
+        local fovBtnCorner = Instance.new("UICorner")
+        fovBtnCorner.Parent = fovSliderBtn
+        fovBtnCorner.CornerRadius = UDim.new(1, 0)
+        
+        local fovDragging = false
+        fovSliderBtn.MouseButton1Down:Connect(function() fovDragging = true end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then fovDragging = false end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if fovDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local barPos = fovSliderBar.AbsolutePosition.X
+                local barW = fovSliderBar.AbsoluteSize.X
+                local percent = math.clamp((input.Position.X - barPos) / barW, 0, 1)
+                fovSliderFill.Size = UDim2.new(percent, 0, 1, 0)
+                fovSliderBtn.Position = UDim2.new(percent, -9, 0.5, -9)
+                aimbotFOV = math.floor(percent * 300 + 20)
+                fovLabel.Text = "Aimbot FOV: " .. aimbotFOV
+                drawFOVCircle()
+            end
+        end)
+        
+        -- Aimbot Part selector
+        local partFrame = Instance.new("Frame")
+        partFrame.Parent = contentMain
+        partFrame.Size = UDim2.new(0.95, 0, 0, 40)
+        partFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        partFrame.BackgroundTransparency = 0.2
+        partFrame.BorderSizePixel = 0
+        local partCorner = Instance.new("UICorner")
+        partCorner.Parent = partFrame
+        partCorner.CornerRadius = UDim.new(0, 10)
+        
+        local partLabel = Instance.new("TextLabel")
+        partLabel.Parent = partFrame
+        partLabel.Size = UDim2.new(0.4, 0, 1, 0)
+        partLabel.Position = UDim2.new(0.05, 0, 0, 0)
+        partLabel.BackgroundTransparency = 1
+        partLabel.Text = "Target: " .. aimbotPart
+        partLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        partLabel.Font = Enum.Font.Gotham
+        partLabel.TextSize = 13
+        partLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local partBtn = Instance.new("TextButton")
+        partBtn.Parent = partFrame
+        partBtn.Size = UDim2.new(0.2, 0, 0.7, 0)
+        partBtn.Position = UDim2.new(0.75, 0, 0.15, 0)
+        partBtn.BackgroundColor3 = ungu
+        partBtn.BackgroundTransparency = 0.3
+        partBtn.Text = "Ganti (Head/Body)"
+        partBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        partBtn.Font = Enum.Font.GothamBold
+        partBtn.TextSize = 11
+        local partBtnCorner = Instance.new("UICorner")
+        partBtnCorner.Parent = partBtn
+        partBtnCorner.CornerRadius = UDim.new(0, 8)
+        
+        partBtn.MouseButton1Click:Connect(function()
+            if aimbotPart == "Head" then
+                aimbotPart = "HumanoidRootPart"
+                partLabel.Text = "Target: Body"
+            else
+                aimbotPart = "Head"
+                partLabel.Text = "Target: Head"
+            end
+        end)
+        
         -- ESP tab
         createToggle(contentESP, "ESP LINE", putih, function(s)
             espLineEnabled = s
@@ -1072,7 +1296,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then applyHologramToAll() else removeHologramFromAll() end
         end, false)
         
-        -- ================== TAB INFO (dengan timer key) ==================
+        -- ================== TAB INFO ==================
         local timerLabel = Instance.new("TextLabel")
         timerLabel.Parent = contentInfo
         timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
@@ -1101,6 +1325,76 @@ VerifyBtn.MouseButton1Click:Connect(function()
         local infoCorner2 = Instance.new("UICorner")
         infoCorner2.Parent = infoTextLabel
         infoCorner2.CornerRadius = UDim.new(0, 10)
+        
+        -- FOV Changer slider (70% default = 70 derajat)
+        local fovChangerFrame = Instance.new("Frame")
+        fovChangerFrame.Parent = contentMain
+        fovChangerFrame.Size = UDim2.new(0.95, 0, 0, 50)
+        fovChangerFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        fovChangerFrame.BackgroundTransparency = 0.2
+        fovChangerFrame.BorderSizePixel = 0
+        local fovChangerCorner = Instance.new("UICorner")
+        fovChangerCorner.Parent = fovChangerFrame
+        fovChangerCorner.CornerRadius = UDim.new(0, 10)
+        
+        local fovChangerLabel = Instance.new("TextLabel")
+        fovChangerLabel.Parent = fovChangerFrame
+        fovChangerLabel.Size = UDim2.new(0.4, 0, 1, 0)
+        fovChangerLabel.Position = UDim2.new(0.05, 0, 0, 0)
+        fovChangerLabel.BackgroundTransparency = 1
+        fovChangerLabel.Text = "FOV Changer: 70"
+        fovChangerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        fovChangerLabel.Font = Enum.Font.Gotham
+        fovChangerLabel.TextSize = 13
+        fovChangerLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local fovChangerBar = Instance.new("Frame")
+        fovChangerBar.Parent = fovChangerFrame
+        fovChangerBar.Size = UDim2.new(0.35, 0, 0, 6)
+        fovChangerBar.Position = UDim2.new(0.55, 0, 0.5, -3)
+        fovChangerBar.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+        fovChangerBar.BorderSizePixel = 0
+        local fovChangerBarCorner = Instance.new("UICorner")
+        fovChangerBarCorner.Parent = fovChangerBar
+        fovChangerBarCorner.CornerRadius = UDim.new(1, 0)
+        
+        local fovChangerFill = Instance.new("Frame")
+        fovChangerFill.Parent = fovChangerBar
+        fovChangerFill.Size = UDim2.new((70 - 50) / 70, 0, 1, 0)
+        fovChangerFill.BackgroundColor3 = ungu
+        fovChangerFill.BorderSizePixel = 0
+        local fovChangerFillCorner = Instance.new("UICorner")
+        fovChangerFillCorner.Parent = fovChangerFill
+        fovChangerFillCorner.CornerRadius = UDim.new(1, 0)
+        
+        local fovChangerBtn = Instance.new("TextButton")
+        fovChangerBtn.Parent = fovChangerBar
+        fovChangerBtn.Size = UDim2.new(0, 18, 0, 18)
+        fovChangerBtn.Position = UDim2.new((70 - 50) / 70, -9, 0.5, -9)
+        fovChangerBtn.BackgroundColor3 = ungu
+        fovChangerBtn.BorderSizePixel = 0
+        fovChangerBtn.Text = ""
+        local fovChangerBtnCorner = Instance.new("UICorner")
+        fovChangerBtnCorner.Parent = fovChangerBtn
+        fovChangerBtnCorner.CornerRadius = UDim.new(1, 0)
+        
+        local fovChangerDragging = false
+        fovChangerBtn.MouseButton1Down:Connect(function() fovChangerDragging = true end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then fovChangerDragging = false end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if fovChangerDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local barPos = fovChangerBar.AbsolutePosition.X
+                local barW = fovChangerBar.AbsoluteSize.X
+                local percent = math.clamp((input.Position.X - barPos) / barW, 0, 1)
+                fovChangerFill.Size = UDim2.new(percent, 0, 1, 0)
+                fovChangerBtn.Position = UDim2.new(percent, -9, 0.5, -9)
+                local fovValue = math.floor(percent * 70 + 50)
+                fovChangerLabel.Text = "FOV Changer: " .. fovValue
+                Camera.FieldOfView = fovValue
+            end
+        end)
         
         -- Update timer setiap detik
         local function updateKeyTimer()
@@ -1139,7 +1433,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end)
         updateKeyTimer()
         
-        -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
+        -- ================== TOMBOL MENU ==================
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -1183,8 +1477,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
-                MainFrame.Size = UDim2.new(0, 360, 0, 520)
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
+                MainFrame.Size = UDim2.new(0, 360, 0, 560)
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -280)}):Play()
             else
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
             end
