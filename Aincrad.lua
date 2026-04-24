@@ -1,8 +1,7 @@
--- ================== DRIP CLIENT V1.4 (FLY MODE) ==================
+-- ================== DRIP CLIENT V1.3 (FINAL) ==================
 -- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
 -- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- FLY MODE (geser layar untuk kontrol), Crosshair di tengah layar, 
--- Enemy counter di atas tengah layar (merah), FOV Changer slider,
+-- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
 -- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
 
 local Players = game:GetService("Players")
@@ -56,17 +55,6 @@ local boostSpeed = 70
 local infJumpEnabled = false
 local infJumpConn = nil
 
--- Fly vars
-local flyEnabled = false
-local flyConnection = nil
-local flySpeed = 50
-local flyBodyVelocity = nil
-local flyBodyGyro = nil
-local verticalControl = 0
-local horizontalControl = 0
-local touching = false
-local touchStartPos = nil
-
 -- Crosshair
 local crosshairEnabled = false
 local crosshairObject = nil
@@ -74,7 +62,7 @@ local crosshairObject = nil
 -- Enemy counter
 local enemyCounterText = nil
 
--- ================== FUNGSI CEK KEY ==================
+-- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -89,6 +77,7 @@ local function cekKey(key)
         return false, "Gagal membaca database!"
     end
     
+    -- Cari key di database
     local foundKeyData = nil
     local keyId = nil
     for id, keyData in pairs(jsonData) do
@@ -102,6 +91,7 @@ local function cekKey(key)
         return false, "KEY TIDAK TERDAFTAR!"
     end
     
+    -- Tentukan masa berlaku (dalam hari) berdasarkan jenis
     local jenis = foundKeyData.jenis or "PERMANEN"
     local expiryDays = 0
     if jenis == "1 JAM" then
@@ -114,10 +104,12 @@ local function cekKey(key)
         expiryDays = 1
     end
     
+    -- Ambil firstUsed dari database, jika tidak ada maka key baru
     local firstUsed = foundKeyData.firstUsed
     local currentTime = os.time()
     
     if not firstUsed then
+        -- Key baru: simpan firstUsed dan expiryDays ke Firebase menggunakan PATCH
         firstUsed = currentTime
         local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
         local updateData = {
@@ -125,21 +117,26 @@ local function cekKey(key)
             expiryDays = expiryDays
         }
         local body = HttpService:JSONEncode(updateData)
+        -- Gunakan RequestAsync (atau fallback untuk executor yang tidak support)
+        local requestSuccess = false
         if syn and syn.request then
-            syn.request({
+            local response = syn.request({
                 Url = updateUrl,
                 Method = "PATCH",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = body
             })
+            requestSuccess = (response and response.Success)
         elseif http and http.request then
-            http.request({
+            local response = http.request({
                 Url = updateUrl,
                 Method = "PATCH",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = body
             })
+            requestSuccess = (response and response.Success)
         else
+            -- Fallback: pcall dengan HttpService (mungkin tidak berfungsi di semua executor)
             pcall(function()
                 HttpService:RequestAsync({
                     Url = updateUrl,
@@ -151,6 +148,7 @@ local function cekKey(key)
         end
     end
     
+    -- Hitung expiry time
     local expiryTime = firstUsed + (expiryDays * 86400)
     if expiryDays >= 999999 then
         expiryTime = math.huge
@@ -160,13 +158,14 @@ local function cekKey(key)
         return false, "KEY SUDAH EXPIRED!"
     end
     
+    -- Simpan info ke variabel global
     keyValid = true
     keyExpiryTime = expiryTime
     keyType = jenis
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== HOLOGRAM ==================
+-- ================== HOLOGRAM (Highlight) ==================
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -214,7 +213,7 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP LINE ==================
+-- ================== ESP LINE (putih, dari atas ke HEAD) ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -224,7 +223,7 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX ==================
+-- ================== ESP BOX (hijau, ketebalan 2.2) ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -266,6 +265,7 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
+    -- ESP LINE (ke HEAD player)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -284,6 +284,7 @@ local function updateESP()
         end
     end
     
+    -- ESP BOX (dari kepala ke kaki)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -308,6 +309,7 @@ local function updateESP()
         end
     end
     
+    -- NAME
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -329,6 +331,7 @@ local function updateESP()
         end
     end
     
+    -- HEALTH BAR (vertikal di samping kanan box)
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -387,108 +390,6 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 RunService.RenderStepped:Connect(updateESP)
-
--- ================== FLY MODE ==================
-local function startFlyMode()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
-    if not torso then return end
-    
-    verticalControl = 0
-    horizontalControl = 0
-    
-    if torso:FindFirstChild("FlyBV") then torso.FlyBV:Destroy() end
-    if torso:FindFirstChild("FlyBG") then torso.FlyBG:Destroy() end
-    
-    flyBodyVelocity = Instance.new("BodyVelocity")
-    flyBodyVelocity.Name = "FlyBV"
-    flyBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-    flyBodyVelocity.Parent = torso
-    
-    flyBodyGyro = Instance.new("BodyGyro")
-    flyBodyGyro.Name = "FlyBG"
-    flyBodyGyro.P = 9e4
-    flyBodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    flyBodyGyro.Parent = torso
-    
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if humanoid then humanoid.PlatformStand = true end
-    if char:FindFirstChild("Animate") then char.Animate.Disabled = true end
-    
-    if flyConnection then flyConnection:Disconnect() end
-    
-    flyConnection = RunService.RenderStepped:Connect(function()
-        if not flyEnabled then return end
-        local currentChar = LocalPlayer.Character
-        if not currentChar then return end
-        local currentTorso = currentChar:FindFirstChild("UpperTorso") or currentChar:FindFirstChild("Torso") or currentChar:FindFirstChild("HumanoidRootPart")
-        if not currentTorso then return end
-        local bv = currentTorso:FindFirstChild("FlyBV")
-        local bg = currentTorso:FindFirstChild("FlyBG")
-        if not bv or not bg then return end
-        
-        local camCF = Camera.CFrame
-        local forward = camCF.LookVector
-        local right = camCF.RightVector
-        local up = camCF.UpVector
-        local moveDirection = forward
-        
-        if horizontalControl ~= 0 then
-            local turnAngle = horizontalControl * 0.5
-            moveDirection = (forward * math.cos(turnAngle) + right * math.sin(turnAngle)).Unit
-        end
-        
-        local velocity = (moveDirection * flySpeed) + (up * verticalControl * flySpeed * 0.7)
-        bv.Velocity = velocity
-        bg.CFrame = camCF
-    end)
-end
-
-local function stopFlyMode()
-    flyEnabled = false
-    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-    local char = LocalPlayer.Character
-    if char then
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then humanoid.PlatformStand = false end
-        if char:FindFirstChild("Animate") then char.Animate.Disabled = false end
-        local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
-        if torso then
-            if torso:FindFirstChild("FlyBV") then torso.FlyBV:Destroy() end
-            if torso:FindFirstChild("FlyBG") then torso.FlyBG:Destroy() end
-        end
-    end
-    verticalControl = 0
-    horizontalControl = 0
-end
-
--- Touch control untuk fly
-local function setupTouchControls()
-    UserInputService.TouchBegan:Connect(function(input, gp)
-        if gp then return end
-        if input.UserInputType == Enum.UserInputType.Touch then
-            touching = true
-            touchStartPos = input.Position
-        end
-    end)
-    UserInputService.TouchMoved:Connect(function(input, gp)
-        if gp then return end
-        if not flyEnabled then return end
-        if touching and touchStartPos then
-            local delta = input.Position - touchStartPos
-            verticalControl = math.abs(delta.Y) > 15 and (delta.Y < 0 and 1 or -1) or 0
-            horizontalControl = math.abs(delta.X) > 15 and (delta.X < 0 and -1 or 1) or 0
-            touchStartPos = input.Position
-        end
-    end)
-    UserInputService.TouchEnded:Connect(function()
-        touching = false
-        verticalControl = 0
-        horizontalControl = 0
-    end)
-end
-setupTouchControls()
 
 -- ================== NOCLIP ==================
 local function updateNoclip()
@@ -835,8 +736,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 360, 0, 560)
-        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
+        MainFrame.Size = UDim2.new(0, 360, 0, 520)
+        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -877,6 +778,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
+        -- Tombol minimize dengan image
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -893,7 +795,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if minimized then
                 MainFrame.Size = UDim2.new(0, 360, 0, 60)
             else
-                MainFrame.Size = UDim2.new(0, 360, 0, 560)
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
             end
         end)
         
@@ -964,7 +866,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         -- Content panels
         local contentMain = Instance.new("ScrollingFrame")
         contentMain.Parent = MainFrame
-        contentMain.Size = UDim2.new(0.94, 0, 0.76, 0)
+        contentMain.Size = UDim2.new(0.94, 0, 0.74, 0)
         contentMain.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentMain.BackgroundColor3 = gray
         contentMain.BackgroundTransparency = 0.4
@@ -983,7 +885,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentESP = Instance.new("ScrollingFrame")
         contentESP.Parent = MainFrame
-        contentESP.Size = UDim2.new(0.94, 0, 0.76, 0)
+        contentESP.Size = UDim2.new(0.94, 0, 0.74, 0)
         contentESP.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentESP.BackgroundColor3 = gray
         contentESP.BackgroundTransparency = 0.4
@@ -1003,7 +905,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentInfo = Instance.new("ScrollingFrame")
         contentInfo.Parent = MainFrame
-        contentInfo.Size = UDim2.new(0.94, 0, 0.76, 0)
+        contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
         contentInfo.Position = UDim2.new(0.03, 0, 0.21, 0)
         contentInfo.BackgroundColor3 = gray
         contentInfo.BackgroundTransparency = 0.4
@@ -1122,81 +1024,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
-        -- FLY SPEED SLIDER
-        local flySliderFrame = Instance.new("Frame")
-        flySliderFrame.Parent = contentMain
-        flySliderFrame.Size = UDim2.new(0.95, 0, 0, 50)
-        flySliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        flySliderFrame.BackgroundTransparency = 0.2
-        flySliderFrame.BorderSizePixel = 0
-        local sliderCorner = Instance.new("UICorner")
-        sliderCorner.Parent = flySliderFrame
-        sliderCorner.CornerRadius = UDim.new(0, 10)
-        
-        local flySpeedLabel = Instance.new("TextLabel")
-        flySpeedLabel.Parent = flySliderFrame
-        flySpeedLabel.Size = UDim2.new(0.4, 0, 1, 0)
-        flySpeedLabel.Position = UDim2.new(0.05, 0, 0, 0)
-        flySpeedLabel.BackgroundTransparency = 1
-        flySpeedLabel.Text = "Fly Speed: " .. flySpeed
-        flySpeedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        flySpeedLabel.Font = Enum.Font.Gotham
-        flySpeedLabel.TextSize = 13
-        flySpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local flySliderBar = Instance.new("Frame")
-        flySliderBar.Parent = flySliderFrame
-        flySliderBar.Size = UDim2.new(0.35, 0, 0, 6)
-        flySliderBar.Position = UDim2.new(0.55, 0, 0.5, -3)
-        flySliderBar.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
-        flySliderBar.BorderSizePixel = 0
-        local flyBarCorner = Instance.new("UICorner")
-        flyBarCorner.Parent = flySliderBar
-        flyBarCorner.CornerRadius = UDim.new(1, 0)
-        
-        local flySliderFill = Instance.new("Frame")
-        flySliderFill.Parent = flySliderBar
-        flySliderFill.Size = UDim2.new((flySpeed - 20) / 100, 0, 1, 0)
-        flySliderFill.BackgroundColor3 = ungu
-        flySliderFill.BorderSizePixel = 0
-        local flyFillCorner = Instance.new("UICorner")
-        flyFillCorner.Parent = flySliderFill
-        flyFillCorner.CornerRadius = UDim.new(1, 0)
-        
-        local flySliderBtn = Instance.new("TextButton")
-        flySliderBtn.Parent = flySliderBar
-        flySliderBtn.Size = UDim2.new(0, 18, 0, 18)
-        flySliderBtn.Position = UDim2.new((flySpeed - 20) / 100, -9, 0.5, -9)
-        flySliderBtn.BackgroundColor3 = ungu
-        flySliderBtn.BorderSizePixel = 0
-        flySliderBtn.Text = ""
-        local flyBtnCorner = Instance.new("UICorner")
-        flyBtnCorner.Parent = flySliderBtn
-        flyBtnCorner.CornerRadius = UDim.new(1, 0)
-        
-        local flyDragging = false
-        flySliderBtn.MouseButton1Down:Connect(function() flyDragging = true end)
-        UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then flyDragging = false end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if flyDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                local barPos = flySliderBar.AbsolutePosition.X
-                local barW = flySliderBar.AbsoluteSize.X
-                local percent = math.clamp((input.Position.X - barPos) / barW, 0, 1)
-                flySliderFill.Size = UDim2.new(percent, 0, 1, 0)
-                flySliderBtn.Position = UDim2.new(percent, -9, 0.5, -9)
-                flySpeed = math.floor(percent * 100 + 20)
-                flySpeedLabel.Text = "Fly Speed: " .. flySpeed
-            end
-        end)
-        
         -- MAIN tab
-        createToggle(contentMain, "FLY MODE", ungu, function(s)
-            flyEnabled = s
-            if s then startFlyMode() else stopFlyMode() end
-        end, false)
-        
         createToggle(contentMain, "NOCLIP", ungu, function(s)
             noclipEnabled = s
             if s then updateNoclip() end
@@ -1222,76 +1050,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then createCrosshair() else removeCrosshair() end
         end, false)
         
-        -- FOV Changer slider
-        local fovChangerFrame = Instance.new("Frame")
-        fovChangerFrame.Parent = contentMain
-        fovChangerFrame.Size = UDim2.new(0.95, 0, 0, 50)
-        fovChangerFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        fovChangerFrame.BackgroundTransparency = 0.2
-        fovChangerFrame.BorderSizePixel = 0
-        local fovChangerCorner = Instance.new("UICorner")
-        fovChangerCorner.Parent = fovChangerFrame
-        fovChangerCorner.CornerRadius = UDim.new(0, 10)
-        
-        local fovChangerLabel = Instance.new("TextLabel")
-        fovChangerLabel.Parent = fovChangerFrame
-        fovChangerLabel.Size = UDim2.new(0.4, 0, 1, 0)
-        fovChangerLabel.Position = UDim2.new(0.05, 0, 0, 0)
-        fovChangerLabel.BackgroundTransparency = 1
-        fovChangerLabel.Text = "FOV Changer: 70"
-        fovChangerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        fovChangerLabel.Font = Enum.Font.Gotham
-        fovChangerLabel.TextSize = 13
-        fovChangerLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local fovChangerBar = Instance.new("Frame")
-        fovChangerBar.Parent = fovChangerFrame
-        fovChangerBar.Size = UDim2.new(0.35, 0, 0, 6)
-        fovChangerBar.Position = UDim2.new(0.55, 0, 0.5, -3)
-        fovChangerBar.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
-        fovChangerBar.BorderSizePixel = 0
-        local fovChangerBarCorner = Instance.new("UICorner")
-        fovChangerBarCorner.Parent = fovChangerBar
-        fovChangerBarCorner.CornerRadius = UDim.new(1, 0)
-        
-        local fovChangerFill = Instance.new("Frame")
-        fovChangerFill.Parent = fovChangerBar
-        fovChangerFill.Size = UDim2.new((70 - 50) / 70, 0, 1, 0)
-        fovChangerFill.BackgroundColor3 = ungu
-        fovChangerFill.BorderSizePixel = 0
-        local fovChangerFillCorner = Instance.new("UICorner")
-        fovChangerFillCorner.Parent = fovChangerFill
-        fovChangerFillCorner.CornerRadius = UDim.new(1, 0)
-        
-        local fovChangerBtn = Instance.new("TextButton")
-        fovChangerBtn.Parent = fovChangerBar
-        fovChangerBtn.Size = UDim2.new(0, 18, 0, 18)
-        fovChangerBtn.Position = UDim2.new((70 - 50) / 70, -9, 0.5, -9)
-        fovChangerBtn.BackgroundColor3 = ungu
-        fovChangerBtn.BorderSizePixel = 0
-        fovChangerBtn.Text = ""
-        local fovChangerBtnCorner = Instance.new("UICorner")
-        fovChangerBtnCorner.Parent = fovChangerBtn
-        fovChangerBtnCorner.CornerRadius = UDim.new(1, 0)
-        
-        local fovChangerDragging = false
-        fovChangerBtn.MouseButton1Down:Connect(function() fovChangerDragging = true end)
-        UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then fovChangerDragging = false end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if fovChangerDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                local barPos = fovChangerBar.AbsolutePosition.X
-                local barW = fovChangerBar.AbsoluteSize.X
-                local percent = math.clamp((input.Position.X - barPos) / barW, 0, 1)
-                fovChangerFill.Size = UDim2.new(percent, 0, 1, 0)
-                fovChangerBtn.Position = UDim2.new(percent, -9, 0.5, -9)
-                local fovValue = math.floor(percent * 70 + 50)
-                fovChangerLabel.Text = "FOV Changer: " .. fovValue
-                Camera.FieldOfView = fovValue
-            end
-        end)
-        
         -- ESP tab
         createToggle(contentESP, "ESP LINE", putih, function(s)
             espLineEnabled = s
@@ -1314,7 +1072,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then applyHologramToAll() else removeHologramFromAll() end
         end, false)
         
-        -- ================== TAB INFO ==================
+        -- ================== TAB INFO (dengan timer key) ==================
         local timerLabel = Instance.new("TextLabel")
         timerLabel.Parent = contentInfo
         timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
@@ -1381,7 +1139,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end)
         updateKeyTimer()
         
-        -- ================== TOMBOL MENU ==================
+        -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -1425,8 +1183,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
-                MainFrame.Size = UDim2.new(0, 360, 0, 560)
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -280)}):Play()
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
             else
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
             end
