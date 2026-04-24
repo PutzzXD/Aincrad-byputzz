@@ -1,9 +1,9 @@
--- ================== DRIP CLIENT V1.4 (FULL AIMBOT) ==================
--- Fitur: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
+-- ================== DRIP CLIENT V1.4 (FLY MODE) ==================
+-- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
 -- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
--- AIMBOT: membidik otomatis ke musuh terdekat dalam FOV (silent aim),
--- FOV Changer slider, Timer sisa waktu key di tab INFO.
+-- FLY MODE (geser layar untuk kontrol), Crosshair di tengah layar, 
+-- Enemy counter di atas tengah layar (merah), FOV Changer slider,
+-- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,7 +12,6 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
-local VirtualUser = game:GetService("VirtualUser")
 
 -- Warna menu ungu
 local ungu = Color3.fromRGB(128, 0, 255)
@@ -57,124 +56,23 @@ local boostSpeed = 70
 local infJumpEnabled = false
 local infJumpConn = nil
 
+-- Fly vars
+local flyEnabled = false
+local flyConnection = nil
+local flySpeed = 50
+local flyBodyVelocity = nil
+local flyBodyGyro = nil
+local verticalControl = 0
+local horizontalControl = 0
+local touching = false
+local touchStartPos = nil
+
 -- Crosshair
 local crosshairEnabled = false
 local crosshairObject = nil
 
 -- Enemy counter
 local enemyCounterText = nil
-
--- ================== AIMBOT VARIABEL ==================
-local aimbotEnabled = false
-local aimbotPart = "Head"  -- "Head" atau "HumanoidRootPart"
-local aimbotFOV = 200  -- radius lingkaran aimbot (pixel), default 70% dari layar
-local aimbotMode = "Silent"  -- "Silent" atau "Normal"
-local aimFOVCircle = nil
-local aimbotKey = "MouseButton2"  -- MouseButton2 = kanan, MouseButton1 = kiri
-
--- Fungsi untuk mendapatkan target terdekat dalam FOV
-local function getClosestTarget()
-    if not aimbotEnabled then return nil end
-    
-    local closest = nil
-    local shortestDist = aimbotFOV
-    local myChar = LocalPlayer.Character
-    local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
-    if not myPos then return nil end
-    
-    local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            if char and char:FindFirstChild(aimbotPart) and char:FindFirstChild("Humanoid") and char.Humanoid.Health > 0 then
-                local targetPart = char[aimbotPart]
-                local targetPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-                if onScreen then
-                    local distance = (Vector2.new(targetPos.X, targetPos.Y) - screenCenter).Magnitude
-                    if distance < shortestDist then
-                        shortestDist = distance
-                        closest = player
-                    end
-                end
-            end
-        end
-    end
-    return closest
-end
-
--- Fungsi Silent Aim (bidik tanpa menggerakkan kamera)
-local function silentAim()
-    local target = getClosestTarget()
-    if target and target.Character and target.Character:FindFirstChild(aimbotPart) then
-        local targetPart = target.Character[aimbotPart]
-        local targetPos = targetPart.Position
-        local viewportPoint = Camera:WorldToViewportPoint(targetPos)
-        
-        -- Set mouse position ke target
-        mousemoverel(viewportPoint.X - Camera.ViewportSize.X/2, viewportPoint.Y - Camera.ViewportSize.Y/2)
-    end
-end
-
--- Normal Aim (bidik dengan menggerakkan kamera)
-local function normalAim()
-    local target = getClosestTarget()
-    if target and target.Character and target.Character:FindFirstChild(aimbotPart) then
-        local targetPart = target.Character[aimbotPart]
-        local targetPos = targetPart.Position
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
-    end
-end
-
--- Auto shoot saat target dalam FOV dan menembak
-local function onShoot()
-    if not aimbotEnabled then return end
-    local target = getClosestTarget()
-    if target then
-        if aimbotMode == "Silent" then
-            silentAim()
-        else
-            normalAim()
-        end
-    end
-end
-
--- Gambar lingkaran FOV di layar
-local function drawFOVCircle()
-    if aimFOVCircle then pcall(function() aimFOVCircle:Remove() end) end
-    aimFOVCircle = Drawing.new("Circle")
-    aimFOVCircle.Radius = aimbotFOV
-    aimFOVCircle.Thickness = 2
-    aimFOVCircle.Color = Color3.fromRGB(0, 255, 0)
-    aimFOVCircle.Filled = false
-    aimFOVCircle.NumSides = 64
-    aimFOVCircle.Transparency = 0.7
-    aimFOVCircle.Visible = aimbotEnabled
-    aimFOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-end
-
--- Update posisi lingkaran FOV
-Camera:GetPropertyChangedSignal("ViewportSize"):Connect(drawFOVCircle)
-RunService.RenderStepped:Connect(function()
-    if aimFOVCircle then
-        aimFOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        aimFOVCircle.Visible = aimbotEnabled
-    end
-end)
-
--- Tombol untuk aimbot (MouseButton2 = klik kanan)
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if aimbotEnabled and input.UserInputType == Enum.UserInputType[aimbotKey] then
-        if aimbotMode == "Silent" then
-            silentAim()
-        else
-            normalAim()
-        end
-        -- Auto click jika ingin langsung nembak (opsional)
-        -- VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
-    end
-end)
 
 -- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
@@ -268,7 +166,7 @@ local function cekKey(key)
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== HOLOGRAM (Highlight) ==================
+-- ================== HOLOGRAM ==================
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -368,7 +266,6 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -387,7 +284,6 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -412,7 +308,6 @@ local function updateESP()
         end
     end
     
-    -- NAME
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -434,7 +329,6 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -493,6 +387,108 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 RunService.RenderStepped:Connect(updateESP)
+
+-- ================== FLY MODE ==================
+local function startFlyMode()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+    if not torso then return end
+    
+    verticalControl = 0
+    horizontalControl = 0
+    
+    if torso:FindFirstChild("FlyBV") then torso.FlyBV:Destroy() end
+    if torso:FindFirstChild("FlyBG") then torso.FlyBG:Destroy() end
+    
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.Name = "FlyBV"
+    flyBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    flyBodyVelocity.Parent = torso
+    
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.Name = "FlyBG"
+    flyBodyGyro.P = 9e4
+    flyBodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    flyBodyGyro.Parent = torso
+    
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.PlatformStand = true end
+    if char:FindFirstChild("Animate") then char.Animate.Disabled = true end
+    
+    if flyConnection then flyConnection:Disconnect() end
+    
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not flyEnabled then return end
+        local currentChar = LocalPlayer.Character
+        if not currentChar then return end
+        local currentTorso = currentChar:FindFirstChild("UpperTorso") or currentChar:FindFirstChild("Torso") or currentChar:FindFirstChild("HumanoidRootPart")
+        if not currentTorso then return end
+        local bv = currentTorso:FindFirstChild("FlyBV")
+        local bg = currentTorso:FindFirstChild("FlyBG")
+        if not bv or not bg then return end
+        
+        local camCF = Camera.CFrame
+        local forward = camCF.LookVector
+        local right = camCF.RightVector
+        local up = camCF.UpVector
+        local moveDirection = forward
+        
+        if horizontalControl ~= 0 then
+            local turnAngle = horizontalControl * 0.5
+            moveDirection = (forward * math.cos(turnAngle) + right * math.sin(turnAngle)).Unit
+        end
+        
+        local velocity = (moveDirection * flySpeed) + (up * verticalControl * flySpeed * 0.7)
+        bv.Velocity = velocity
+        bg.CFrame = camCF
+    end)
+end
+
+local function stopFlyMode()
+    flyEnabled = false
+    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.PlatformStand = false end
+        if char:FindFirstChild("Animate") then char.Animate.Disabled = false end
+        local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+        if torso then
+            if torso:FindFirstChild("FlyBV") then torso.FlyBV:Destroy() end
+            if torso:FindFirstChild("FlyBG") then torso.FlyBG:Destroy() end
+        end
+    end
+    verticalControl = 0
+    horizontalControl = 0
+end
+
+-- Touch control untuk fly
+local function setupTouchControls()
+    UserInputService.TouchBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            touching = true
+            touchStartPos = input.Position
+        end
+    end)
+    UserInputService.TouchMoved:Connect(function(input, gp)
+        if gp then return end
+        if not flyEnabled then return end
+        if touching and touchStartPos then
+            local delta = input.Position - touchStartPos
+            verticalControl = math.abs(delta.Y) > 15 and (delta.Y < 0 and 1 or -1) or 0
+            horizontalControl = math.abs(delta.X) > 15 and (delta.X < 0 and -1 or 1) or 0
+            touchStartPos = input.Position
+        end
+    end)
+    UserInputService.TouchEnded:Connect(function()
+        touching = false
+        verticalControl = 0
+        horizontalControl = 0
+    end)
+end
+setupTouchControls()
 
 -- ================== NOCLIP ==================
 local function updateNoclip()
@@ -809,7 +805,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         KeyGui:Destroy()
         initESP()
         createEnemyCounter()
-        drawFOVCircle()
         
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
@@ -839,7 +834,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         MenuGui.Parent = game.CoreGui
         
         local MainFrame = Instance.new("Frame")
-        MainFrame.Parent = MenuGui        MainFrame.Size = UDim2.new(0, 360, 0, 560)
+        MainFrame.Parent = MenuGui
+        MainFrame.Size = UDim2.new(0, 360, 0, 560)
         MainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
@@ -1126,7 +1122,81 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
+        -- FLY SPEED SLIDER
+        local flySliderFrame = Instance.new("Frame")
+        flySliderFrame.Parent = contentMain
+        flySliderFrame.Size = UDim2.new(0.95, 0, 0, 50)
+        flySliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        flySliderFrame.BackgroundTransparency = 0.2
+        flySliderFrame.BorderSizePixel = 0
+        local sliderCorner = Instance.new("UICorner")
+        sliderCorner.Parent = flySliderFrame
+        sliderCorner.CornerRadius = UDim.new(0, 10)
+        
+        local flySpeedLabel = Instance.new("TextLabel")
+        flySpeedLabel.Parent = flySliderFrame
+        flySpeedLabel.Size = UDim2.new(0.4, 0, 1, 0)
+        flySpeedLabel.Position = UDim2.new(0.05, 0, 0, 0)
+        flySpeedLabel.BackgroundTransparency = 1
+        flySpeedLabel.Text = "Fly Speed: " .. flySpeed
+        flySpeedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        flySpeedLabel.Font = Enum.Font.Gotham
+        flySpeedLabel.TextSize = 13
+        flySpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local flySliderBar = Instance.new("Frame")
+        flySliderBar.Parent = flySliderFrame
+        flySliderBar.Size = UDim2.new(0.35, 0, 0, 6)
+        flySliderBar.Position = UDim2.new(0.55, 0, 0.5, -3)
+        flySliderBar.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+        flySliderBar.BorderSizePixel = 0
+        local flyBarCorner = Instance.new("UICorner")
+        flyBarCorner.Parent = flySliderBar
+        flyBarCorner.CornerRadius = UDim.new(1, 0)
+        
+        local flySliderFill = Instance.new("Frame")
+        flySliderFill.Parent = flySliderBar
+        flySliderFill.Size = UDim2.new((flySpeed - 20) / 100, 0, 1, 0)
+        flySliderFill.BackgroundColor3 = ungu
+        flySliderFill.BorderSizePixel = 0
+        local flyFillCorner = Instance.new("UICorner")
+        flyFillCorner.Parent = flySliderFill
+        flyFillCorner.CornerRadius = UDim.new(1, 0)
+        
+        local flySliderBtn = Instance.new("TextButton")
+        flySliderBtn.Parent = flySliderBar
+        flySliderBtn.Size = UDim2.new(0, 18, 0, 18)
+        flySliderBtn.Position = UDim2.new((flySpeed - 20) / 100, -9, 0.5, -9)
+        flySliderBtn.BackgroundColor3 = ungu
+        flySliderBtn.BorderSizePixel = 0
+        flySliderBtn.Text = ""
+        local flyBtnCorner = Instance.new("UICorner")
+        flyBtnCorner.Parent = flySliderBtn
+        flyBtnCorner.CornerRadius = UDim.new(1, 0)
+        
+        local flyDragging = false
+        flySliderBtn.MouseButton1Down:Connect(function() flyDragging = true end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then flyDragging = false end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if flyDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local barPos = flySliderBar.AbsolutePosition.X
+                local barW = flySliderBar.AbsoluteSize.X
+                local percent = math.clamp((input.Position.X - barPos) / barW, 0, 1)
+                flySliderFill.Size = UDim2.new(percent, 0, 1, 0)
+                flySliderBtn.Position = UDim2.new(percent, -9, 0.5, -9)
+                flySpeed = math.floor(percent * 100 + 20)
+                flySpeedLabel.Text = "Fly Speed: " .. flySpeed
+            end
+        end)
+        
         -- MAIN tab
+        createToggle(contentMain, "FLY MODE", ungu, function(s)
+            flyEnabled = s
+            if s then startFlyMode() else stopFlyMode() end
+        end, false)
+        
         createToggle(contentMain, "NOCLIP", ungu, function(s)
             noclipEnabled = s
             if s then updateNoclip() end
@@ -1152,181 +1222,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then createCrosshair() else removeCrosshair() end
         end, false)
         
-        -- AIMBOT SECTION
-        createToggle(contentMain, "AIMBOT", ungu, function(s)
-            aimbotEnabled = s
-            drawFOVCircle()
-        end, false)
-        
-        -- Aimbot FOV Slider (70% dari layar = sekitar 200-250px)
-        local aimbotFOVSlider = Instance.new("Frame")
-        aimbotFOVSlider.Parent = contentMain
-        aimbotFOVSlider.Size = UDim2.new(0.95, 0, 0, 50)
-        aimbotFOVSlider.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        aimbotFOVSlider.BackgroundTransparency = 0.2
-        aimbotFOVSlider.BorderSizePixel = 0
-        local sliderCorner = Instance.new("UICorner")
-        sliderCorner.Parent = aimbotFOVSlider
-        sliderCorner.CornerRadius = UDim.new(0, 10)
-        
-        local fovLabel = Instance.new("TextLabel")
-        fovLabel.Parent = aimbotFOVSlider
-        fovLabel.Size = UDim2.new(0.4, 0, 1, 0)
-        fovLabel.Position = UDim2.new(0.05, 0, 0, 0)
-        fovLabel.BackgroundTransparency = 1
-        fovLabel.Text = "Aimbot FOV: " .. aimbotFOV
-        fovLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        fovLabel.Font = Enum.Font.Gotham
-        fovLabel.TextSize = 13
-        fovLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local fovSliderBar = Instance.new("Frame")
-        fovSliderBar.Parent = aimbotFOVSlider
-        fovSliderBar.Size = UDim2.new(0.35, 0, 0, 6)
-        fovSliderBar.Position = UDim2.new(0.55, 0, 0.5, -3)
-        fovSliderBar.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
-        fovSliderBar.BorderSizePixel = 0
-        local fovBarCorner = Instance.new("UICorner")
-        fovBarCorner.Parent = fovSliderBar
-        fovBarCorner.CornerRadius = UDim.new(1, 0)
-        
-        local fovSliderFill = Instance.new("Frame")
-        fovSliderFill.Parent = fovSliderBar
-        fovSliderFill.Size = UDim2.new(aimbotFOV / 300, 0, 1, 0)
-        fovSliderFill.BackgroundColor3 = ungu
-        fovSliderFill.BorderSizePixel = 0
-        local fovFillCorner = Instance.new("UICorner")
-        fovFillCorner.Parent = fovSliderFill
-        fovFillCorner.CornerRadius = UDim.new(1, 0)
-        
-        local fovSliderBtn = Instance.new("TextButton")
-        fovSliderBtn.Parent = fovSliderBar
-        fovSliderBtn.Size = UDim2.new(0, 18, 0, 18)
-        fovSliderBtn.Position = UDim2.new(aimbotFOV / 300, -9, 0.5, -9)
-        fovSliderBtn.BackgroundColor3 = ungu
-        fovSliderBtn.BorderSizePixel = 0
-        fovSliderBtn.Text = ""
-        local fovBtnCorner = Instance.new("UICorner")
-        fovBtnCorner.Parent = fovSliderBtn
-        fovBtnCorner.CornerRadius = UDim.new(1, 0)
-        
-        local fovDragging = false
-        fovSliderBtn.MouseButton1Down:Connect(function() fovDragging = true end)
-        UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then fovDragging = false end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if fovDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                local barPos = fovSliderBar.AbsolutePosition.X
-                local barW = fovSliderBar.AbsoluteSize.X
-                local percent = math.clamp((input.Position.X - barPos) / barW, 0, 1)
-                fovSliderFill.Size = UDim2.new(percent, 0, 1, 0)
-                fovSliderBtn.Position = UDim2.new(percent, -9, 0.5, -9)
-                aimbotFOV = math.floor(percent * 300 + 20)
-                fovLabel.Text = "Aimbot FOV: " .. aimbotFOV
-                drawFOVCircle()
-            end
-        end)
-        
-        -- Aimbot Part selector
-        local partFrame = Instance.new("Frame")
-        partFrame.Parent = contentMain
-        partFrame.Size = UDim2.new(0.95, 0, 0, 40)
-        partFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        partFrame.BackgroundTransparency = 0.2
-        partFrame.BorderSizePixel = 0
-        local partCorner = Instance.new("UICorner")
-        partCorner.Parent = partFrame
-        partCorner.CornerRadius = UDim.new(0, 10)
-        
-        local partLabel = Instance.new("TextLabel")
-        partLabel.Parent = partFrame
-        partLabel.Size = UDim2.new(0.4, 0, 1, 0)
-        partLabel.Position = UDim2.new(0.05, 0, 0, 0)
-        partLabel.BackgroundTransparency = 1
-        partLabel.Text = "Target: " .. aimbotPart
-        partLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        partLabel.Font = Enum.Font.Gotham
-        partLabel.TextSize = 13
-        partLabel.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local partBtn = Instance.new("TextButton")
-        partBtn.Parent = partFrame
-        partBtn.Size = UDim2.new(0.2, 0, 0.7, 0)
-        partBtn.Position = UDim2.new(0.75, 0, 0.15, 0)
-        partBtn.BackgroundColor3 = ungu
-        partBtn.BackgroundTransparency = 0.3
-        partBtn.Text = "Ganti (Head/Body)"
-        partBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        partBtn.Font = Enum.Font.GothamBold
-        partBtn.TextSize = 11
-        local partBtnCorner = Instance.new("UICorner")
-        partBtnCorner.Parent = partBtn
-        partBtnCorner.CornerRadius = UDim.new(0, 8)
-        
-        partBtn.MouseButton1Click:Connect(function()
-            if aimbotPart == "Head" then
-                aimbotPart = "HumanoidRootPart"
-                partLabel.Text = "Target: Body"
-            else
-                aimbotPart = "Head"
-                partLabel.Text = "Target: Head"
-            end
-        end)
-        
-        -- ESP tab
-        createToggle(contentESP, "ESP LINE", putih, function(s)
-            espLineEnabled = s
-            if not s then
-                for _, v in pairs(espLines) do v[1].Visible = false end
-            end
-        end, false)
-        
-        createToggle(contentESP, "ESP BOX", hijau, function(s)
-            espBoxEnabled = s
-            if not s then
-                for _, v in pairs(espBoxes) do v[1].Visible = false end
-                for _, v in pairs(espNames) do v[1].Visible = false end
-                for _, v in pairs(espHealthBars) do v[1].Visible = false end
-            end
-        end, false)
-        
-        createToggle(contentESP, "HOLOGRAM", merah, function(s)
-            hologramEnabled = s
-            if s then applyHologramToAll() else removeHologramFromAll() end
-        end, false)
-        
-        -- ================== TAB INFO ==================
-        local timerLabel = Instance.new("TextLabel")
-        timerLabel.Parent = contentInfo
-        timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
-        timerLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        timerLabel.BackgroundTransparency = 0.2
-        timerLabel.Text = "Memuat sisa waktu..."
-        timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        timerLabel.Font = Enum.Font.GothamBold
-        timerLabel.TextSize = 14
-        timerLabel.TextWrapped = true
-        local timerCorner = Instance.new("UICorner")
-        timerCorner.Parent = timerLabel
-        timerCorner.CornerRadius = UDim.new(0, 10)
-        
-        local infoTextLabel = Instance.new("TextLabel")
-        infoTextLabel.Parent = contentInfo
-        infoTextLabel.Size = UDim2.new(0.95, 0, 0, 100)
-        infoTextLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        infoTextLabel.BackgroundTransparency = 0.2
-        infoTextLabel.Text = "DRIP CLIENT\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
-        infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        infoTextLabel.Font = Enum.Font.Gotham
-        infoTextLabel.TextSize = 14
-        infoTextLabel.TextWrapped = true
-        infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
-        local infoCorner2 = Instance.new("UICorner")
-        infoCorner2.Parent = infoTextLabel
-        infoCorner2.CornerRadius = UDim.new(0, 10)
-        
-        -- FOV Changer slider (70% default = 70 derajat)
+        -- FOV Changer slider
         local fovChangerFrame = Instance.new("Frame")
         fovChangerFrame.Parent = contentMain
         fovChangerFrame.Size = UDim2.new(0.95, 0, 0, 50)
@@ -1395,6 +1291,58 @@ VerifyBtn.MouseButton1Click:Connect(function()
                 Camera.FieldOfView = fovValue
             end
         end)
+        
+        -- ESP tab
+        createToggle(contentESP, "ESP LINE", putih, function(s)
+            espLineEnabled = s
+            if not s then
+                for _, v in pairs(espLines) do v[1].Visible = false end
+            end
+        end, false)
+        
+        createToggle(contentESP, "ESP BOX", hijau, function(s)
+            espBoxEnabled = s
+            if not s then
+                for _, v in pairs(espBoxes) do v[1].Visible = false end
+                for _, v in pairs(espNames) do v[1].Visible = false end
+                for _, v in pairs(espHealthBars) do v[1].Visible = false end
+            end
+        end, false)
+        
+        createToggle(contentESP, "HOLOGRAM", merah, function(s)
+            hologramEnabled = s
+            if s then applyHologramToAll() else removeHologramFromAll() end
+        end, false)
+        
+        -- ================== TAB INFO ==================
+        local timerLabel = Instance.new("TextLabel")
+        timerLabel.Parent = contentInfo
+        timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
+        timerLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        timerLabel.BackgroundTransparency = 0.2
+        timerLabel.Text = "Memuat sisa waktu..."
+        timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        timerLabel.Font = Enum.Font.GothamBold
+        timerLabel.TextSize = 14
+        timerLabel.TextWrapped = true
+        local timerCorner = Instance.new("UICorner")
+        timerCorner.Parent = timerLabel
+        timerCorner.CornerRadius = UDim.new(0, 10)
+        
+        local infoTextLabel = Instance.new("TextLabel")
+        infoTextLabel.Parent = contentInfo
+        infoTextLabel.Size = UDim2.new(0.95, 0, 0, 100)
+        infoTextLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        infoTextLabel.BackgroundTransparency = 0.2
+        infoTextLabel.Text = "DRIP CLIENT\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
+        infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        infoTextLabel.Font = Enum.Font.Gotham
+        infoTextLabel.TextSize = 14
+        infoTextLabel.TextWrapped = true
+        infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
+        local infoCorner2 = Instance.new("UICorner")
+        infoCorner2.Parent = infoTextLabel
+        infoCorner2.CornerRadius = UDim.new(0, 10)
         
         -- Update timer setiap detik
         local function updateKeyTimer()
