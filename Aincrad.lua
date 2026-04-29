@@ -1,7 +1,7 @@
 -- ================== DRIP CLIENT V1.3 (FINAL) ==================
 -- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
 -- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
+-- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah, berdasarkan jarak & visibility),
 -- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
 
 local Players = game:GetService("Players")
@@ -475,36 +475,38 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
--- ================== ENEMY COUNTER ==================
-local function createEnemyCounter()
-    if enemyCounterText then pcall(function() enemyCounterText:Remove() end) end
-    enemyCounterText = Drawing.new("Text")
-    enemyCounterText.Size = 20
-    enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
-    enemyCounterText.Center = true
-    enemyCounterText.Outline = true
-    enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
-    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
-    enemyCounterText.Visible = true
-    enemyCounterText.Text = "ENEMY: 0"
-end
-
-local function updateEnemyCounter()
-    if not enemyCounterText then return end
+-- ================== ENEMY COUNTER (SESUAI ESP) ==================
+local function getEnemyCountWithDistance()
+    local myChar = LocalPlayer.Character
+    local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
+    if not myPos then return 0 end
+    
     local count = 0
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
             if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-                count = count + 1
+                local hrp = char.HumanoidRootPart
+                local dist = (myPos - hrp.Position).Magnitude
+                if dist <= MAX_DIST then
+                    local headPos = char.Head.Position
+                    local vec, onScreen = Camera:WorldToViewportPoint(headPos)
+                    if onScreen then
+                        count = count + 1
+                    end
+                end
             end
         end
     end
+    return count
+end
+
+local function updateEnemyCounter()
+    if not enemyCounterText then return end
+    local count = getEnemyCountWithDistance()
     enemyCounterText.Text = "ENEMY: " .. count
     enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
 end
-
-RunService.RenderStepped:Connect(updateEnemyCounter)
 
 -- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
@@ -1189,6 +1191,9 @@ VerifyBtn.MouseButton1Click:Connect(function()
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
             end
         end)
+        
+        -- Update enemy counter secara berkala
+        RunService.RenderStepped:Connect(updateEnemyCounter)
         
     else
         StatusLabel.Text = "❌ " .. message
