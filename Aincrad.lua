@@ -1,6 +1,7 @@
--- ================== DRIP CLIENT V2.0 (BRUTAL MODE + FIX MENU) ==================
--- Fix: menu muncul setelah key valid
--- Tambahan: Brutal Mode (Auto Kill, Auto Loot, Teleport Enemy)
+-- ================== DRIP CLIENT V2.1 (MAGNET MODE + ENEMY COUNTER TEBAL) ==================
+-- Fitur: ESP (Line, Box, Hologram), Noclip, God Mode, Speed 70, Infinity Jump, Crosshair
+-- MAGNET: Semua musuh dalam radius tertarik ke arah local player
+-- Enemy Counter: Teks lebih tebal & besar
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,7 +11,6 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser = game:GetService("VirtualUser")
 
 -- Warna menu ungu
 local ungu = Color3.fromRGB(128, 0, 255)
@@ -23,7 +23,9 @@ local merah = Color3.fromRGB(255, 80, 80)
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
-local MAX_DIST = 115
+local MAX_DIST = 1000
+local MAGNET_RADIUS = 60
+local MAGNET_FORCE = 0.7
 
 -- Variabel key timer
 local keyValid = false
@@ -40,11 +42,8 @@ local espBoxes = {}
 local espNames = {}
 local espHealthBars = {}
 
--- Brutal mode vars
-local brutalModeEnabled = false
-local autoKillEnabled = false
-local autoLootEnabled = false
-local teleportEnemyEnabled = false
+-- Magnet vars
+local magnetEnabled = false
 
 local hologramHighlights = {}
 
@@ -65,7 +64,7 @@ local infJumpConn = nil
 local crosshairEnabled = false
 local crosshairObject = nil
 
--- Enemy counter
+-- Enemy counter (tebal)
 local enemyCounterText = nil
 
 -- ================== FUNGSI CEK KEY ==================
@@ -151,80 +150,33 @@ local function cekKey(key)
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== BRUTAL MODE ==================
--- Auto Kill: tembak otomatis ke musuh terdekat
-local function autoKill()
-    if not brutalModeEnabled or not autoKillEnabled then return end
-    local myChar = LocalPlayer.Character
-    if not myChar then return end
+-- ================== MAGNET PLAYER ==================
+-- Semua musuh dalam radius tertarik ke posisi local player
+local function magnetPull()
+    if not magnetEnabled then return end
     
-    local nearestEnemy = nil
-    local nearestDist = math.huge
-    local myPos = myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-                local hrp = char.HumanoidRootPart
-                local dist = myPos and (myPos - hrp.Position).Magnitude or math.huge
-                if dist < nearestDist and dist <= MAX_DIST then
-                    nearestDist = dist
-                    nearestEnemy = player
-                end
-            end
-        end
-    end
-    
-    if nearestEnemy then
-        local targetChar = nearestEnemy.Character
-        if targetChar and targetChar:FindFirstChild("Head") then
-            -- Arahkan kamera ke target (silent aim)
-            local targetPos = targetChar.Head.Position
-            local currentCamPos = Camera.CFrame.Position
-            local direction = (targetPos - currentCamPos).unit
-            Camera.CFrame = CFrame.new(currentCamPos, currentCamPos + direction)
-            
-            -- Simulasi tembak (klik mouse)
-            VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
-        end
-    end
-end
-
--- Auto Loot: ambil item terdekat otomatis
-local function autoLoot()
-    if not brutalModeEnabled or not autoLootEnabled then return end
     local myChar = LocalPlayer.Character
     if not myChar then return end
     
     local myHrp = myChar:FindFirstChild("HumanoidRootPart")
     if not myHrp then return end
     
-    for _, item in pairs(workspace:GetDescendants()) do
-        if item:IsA("Tool") or (item.Name:lower():find("medkit") or item.Name:lower():find("ammo")) then
-            if item.Parent ~= myChar and item:FindFirstChild("Handle") then
-                local dist = (myHrp.Position - item.Handle.Position).Magnitude
-                if dist <= 15 then
-                    fireproximityprompt(item)
-                end
-            end
-        end
-    end
-end
-
--- Teleport musuh ke kamu
-local function teleportEnemyToMe()
-    if not brutalModeEnabled or not teleportEnemyEnabled then return end
+    local myPos = myHrp.Position
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                local myChar = LocalPlayer.Character
-                if myChar and myChar:FindFirstChild("HumanoidRootPart") then
-                    char.HumanoidRootPart.CFrame = myChar.HumanoidRootPart.CFrame + Vector3.new(0, 2, 0)
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (myPos - hrp.Position).Magnitude
+                    if dist <= MAGNET_RADIUS and dist > 3 then
+                        -- Arah dari musuh ke player
+                        local direction = (myPos - hrp.Position).unit
+                        -- Pindahkan musuh mendekati player
+                        hrp.CFrame = hrp.CFrame + direction * MAGNET_FORCE
+                    end
                 end
-                task.wait(0.5)
             end
         end
     end
@@ -271,7 +223,7 @@ local function removeHologramFromAll()
     end
 end
 
--- ================== ESP LINE ==================
+-- ================== ESP ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -281,7 +233,6 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -522,25 +473,17 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
-local function getEnemyCountWithDistance()
+-- ================== ENEMY COUNTER (TEBAL) ==================
+local function getEnemyCount()
     local myChar = LocalPlayer.Character
-    local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
-    if not myPos then return 0 end
+    if not myChar then return 0 end
     
     local count = 0
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
-            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-                local hrp = char.HumanoidRootPart
-                local dist = (myPos - hrp.Position).Magnitude
-                if dist <= MAX_DIST then
-                    local headPos = char.Head.Position
-                    local vec, onScreen = Camera:WorldToViewportPoint(headPos)
-                    if onScreen then
-                        count = count + 1
-                    end
-                end
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                count = count + 1
             end
         end
     end
@@ -549,8 +492,8 @@ end
 
 local function updateEnemyCounter()
     if not enemyCounterText then return end
-    local count = getEnemyCountWithDistance()
-    enemyCounterText.Text = "ENEMY: " .. count
+    local count = getEnemyCount()
+    enemyCounterText.Text = "🔥 ENEMY: " .. count .. " 🔥"
     enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
 end
 
@@ -619,7 +562,7 @@ InfoText.Parent = InfoFrame
 InfoText.Size = UDim2.new(1, -20, 1, -10)
 InfoText.Position = UDim2.new(0, 10, 0, 5)
 InfoText.BackgroundTransparency = 1
-InfoText.Text = "Masukkan Key Anda\n\nTIPE KEY: 1 JAM | 1 HARI | PERMANEN\n\nBRUTAL MODE READY 🔥"
+InfoText.Text = "Masukkan Key Anda\n\nTIPE KEY: 1 JAM | 1 HARI | PERMANEN\n\n"
 InfoText.TextColor3 = Color3.fromRGB(200, 200, 200)
 InfoText.Font = Enum.Font.Gotham
 InfoText.TextSize = 11
@@ -749,28 +692,25 @@ VerifyBtn.MouseButton1Click:Connect(function()
         TweenService:Create(KeyFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 100, 0)}):Play()
         task.wait(0.3)
         
-        -- Loading countdown
         for i = 3, 1, -1 do
             StatusLabel.Text = "Loading " .. i .. "..."
             task.wait(1)
         end
         
-        -- Destroy key GUI
         KeyGui:Destroy()
-        
-        -- Init ESP & Enemy Counter
         initESP()
         
-        -- Create enemy counter dengan aman
+        -- Enemy counter dengan teks TEBAL & BESAR
         local success, err = pcall(function()
             enemyCounterText = Drawing.new("Text")
-            enemyCounterText.Size = 20
+            enemyCounterText.Size = 28
             enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
             enemyCounterText.Center = true
             enemyCounterText.Outline = true
             enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
+            enemyCounterText.OutlineThickness = 2
             enemyCounterText.Visible = true
-            enemyCounterText.Text = "ENEMY: 0"
+            enemyCounterText.Text = "✅ ENEMY: 0 "
             updateEnemyCounter()
         end)
         
@@ -778,7 +718,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
             warn("Enemy counter error: " .. tostring(err))
         end
         
-        -- Notification
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
         local nf = Instance.new("Frame")
@@ -794,7 +733,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         nt.Parent = nf
         nt.Size = UDim2.new(1, 0, 1, 0)
         nt.BackgroundTransparency = 1
-        nt.Text = "✅ DRIP CLIENT ACTIVATED!"
+        nt.Text = "✅ DRIP CLIENT Putzzdev!"
         nt.TextColor3 = Color3.fromRGB(255, 255, 255)
         nt.Font = Enum.Font.GothamBold
         nt.TextSize = 16
@@ -808,8 +747,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 360, 0, 560)
-        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
+        MainFrame.Size = UDim2.new(0, 360, 0, 520)
+        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -845,7 +784,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Parent = Header
         Title.Size = UDim2.new(1, 0, 1, 0)
         Title.BackgroundTransparency = 1
-        Title.Text = "DRIP CLIENT V2.0"
+        Title.Text = "DRIP CLIENT V2.1"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
@@ -866,7 +805,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if minimized then
                 MainFrame.Size = UDim2.new(0, 360, 0, 60)
             else
-                MainFrame.Size = UDim2.new(0, 360, 0, 560)
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
             end
         end)
         
@@ -884,7 +823,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabMain = Instance.new("TextButton")
         tabMain.Parent = TabBar
-        tabMain.Size = UDim2.new(0.25, -2, 1, -4)
+        tabMain.Size = UDim2.new(0.33, -2, 1, -4)
         tabMain.Position = UDim2.new(0, 2, 0, 2)
         tabMain.BackgroundColor3 = ungu
         tabMain.BackgroundTransparency = 0.3
@@ -898,8 +837,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabESP = Instance.new("TextButton")
         tabESP.Parent = TabBar
-        tabESP.Size = UDim2.new(0.25, -2, 1, -4)
-        tabESP.Position = UDim2.new(0.25, 2, 0, 2)
+        tabESP.Size = UDim2.new(0.33, -2, 1, -4)
+        tabESP.Position = UDim2.new(0.33, 2, 0, 2)
         tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabESP.BackgroundTransparency = 0.5
         tabESP.Text = "ESP"
@@ -910,33 +849,19 @@ VerifyBtn.MouseButton1Click:Connect(function()
         tabESPCorner.Parent = tabESP
         tabESPCorner.CornerRadius = UDim.new(0, 8)
         
-        local tabBrutal = Instance.new("TextButton")
-        tabBrutal.Parent = TabBar
-        tabBrutal.Size = UDim2.new(0.25, -2, 1, -4)
-        tabBrutal.Position = UDim2.new(0.5, 2, 0, 2)
-        tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        tabBrutal.BackgroundTransparency = 0.5
-        tabBrutal.Text = "🔥BRUTAL"
-        tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
-        tabBrutal.Font = Enum.Font.GothamBold
-        tabBrutal.TextSize = 12
-        local tabBrutalCorner = Instance.new("UICorner")
-        tabBrutalCorner.Parent = tabBrutal
-        tabBrutalCorner.CornerRadius = UDim.new(0, 8)
-        
-        local tabInfo = Instance.new("TextButton")
-        tabInfo.Parent = TabBar
-        tabInfo.Size = UDim2.new(0.25, -2, 1, -4)
-        tabInfo.Position = UDim2.new(0.75, 2, 0, 2)
-        tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        tabInfo.BackgroundTransparency = 0.5
-        tabInfo.Text = "INFO"
-        tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
-        tabInfo.Font = Enum.Font.GothamBold
-        tabInfo.TextSize = 12
-        local tabInfoCorner = Instance.new("UICorner")
-        tabInfoCorner.Parent = tabInfo
-        tabInfoCorner.CornerRadius = UDim.new(0, 8)
+        local tabMagnet = Instance.new("TextButton")
+        tabMagnet.Parent = TabBar
+        tabMagnet.Size = UDim2.new(0.34, -2, 1, -4)
+        tabMagnet.Position = UDim2.new(0.66, 2, 0, 2)
+        tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        tabMagnet.BackgroundTransparency = 0.5
+        tabMagnet.Text = "MAGNETIC"
+        tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
+        tabMagnet.Font = Enum.Font.GothamBold
+        tabMagnet.TextSize = 12
+        local tabMagnetCorner = Instance.new("UICorner")
+        tabMagnetCorner.Parent = tabMagnet
+        tabMagnetCorner.CornerRadius = UDim.new(0, 8)
         
         -- Content panels
         local contentMain = Instance.new("ScrollingFrame")
@@ -978,45 +903,25 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 10)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
-        local contentBrutal = Instance.new("ScrollingFrame")
-        contentBrutal.Parent = MainFrame
-        contentBrutal.Size = UDim2.new(0.94, 0, 0.74, 0)
-        contentBrutal.Position = UDim2.new(0.03, 0, 0.2, 0)
-        contentBrutal.BackgroundColor3 = gray
-        contentBrutal.BackgroundTransparency = 0.4
-        contentBrutal.BorderSizePixel = 0
-        contentBrutal.ScrollBarThickness = 5
-        contentBrutal.ScrollBarImageColor3 = ungu
-        contentBrutal.CanvasSize = UDim2.new(0, 0, 0, 0)
-        contentBrutal.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        contentBrutal.Visible = false
-        local contentBrutalCorner = Instance.new("UICorner")
-        contentBrutalCorner.Parent = contentBrutal
-        contentBrutalCorner.CornerRadius = UDim.new(0, 12)
-        local layoutBrutal = Instance.new("UIListLayout")
-        layoutBrutal.Parent = contentBrutal
-        layoutBrutal.Padding = UDim.new(0, 10)
-        layoutBrutal.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        
-        local contentInfo = Instance.new("ScrollingFrame")
-        contentInfo.Parent = MainFrame
-        contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
-        contentInfo.Position = UDim2.new(0.03, 0, 0.2, 0)
-        contentInfo.BackgroundColor3 = gray
-        contentInfo.BackgroundTransparency = 0.4
-        contentInfo.BorderSizePixel = 0
-        contentInfo.ScrollBarThickness = 5
-        contentInfo.ScrollBarImageColor3 = ungu
-        contentInfo.CanvasSize = UDim2.new(0, 0, 0, 0)
-        contentInfo.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        contentInfo.Visible = false
-        local contentInfoCorner = Instance.new("UICorner")
-        contentInfoCorner.Parent = contentInfo
-        contentInfoCorner.CornerRadius = UDim.new(0, 12)
-        local layoutInfo = Instance.new("UIListLayout")
-        layoutInfo.Parent = contentInfo
-        layoutInfo.Padding = UDim.new(0, 10)
-        layoutInfo.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        local contentMagnet = Instance.new("ScrollingFrame")
+        contentMagnet.Parent = MainFrame
+        contentMagnet.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentMagnet.Position = UDim2.new(0.03, 0, 0.2, 0)
+        contentMagnet.BackgroundColor3 = gray
+        contentMagnet.BackgroundTransparency = 0.4
+        contentMagnet.BorderSizePixel = 0
+        contentMagnet.ScrollBarThickness = 5
+        contentMagnet.ScrollBarImageColor3 = ungu
+        contentMagnet.CanvasSize = UDim2.new(0, 0, 0, 0)
+        contentMagnet.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        contentMagnet.Visible = false
+        local contentMagnetCorner = Instance.new("UICorner")
+        contentMagnetCorner.Parent = contentMagnet
+        contentMagnetCorner.CornerRadius = UDim.new(0, 12)
+        local layoutMagnet = Instance.new("UIListLayout")
+        layoutMagnet.Parent = contentMagnet
+        layoutMagnet.Padding = UDim.new(0, 10)
+        layoutMagnet.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
         -- Tab switching
         tabMain.MouseButton1Click:Connect(function()
@@ -1026,16 +931,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabBrutal.BackgroundTransparency = 0.5
-            tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabInfo.BackgroundTransparency = 0.5
-            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabMagnet.BackgroundTransparency = 0.5
+            tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = true
             contentESP.Visible = false
-            contentBrutal.Visible = false
-            contentInfo.Visible = false
+            contentMagnet.Visible = false
         end)
         tabESP.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = ungu
@@ -1044,52 +945,26 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabBrutal.BackgroundTransparency = 0.5
-            tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabInfo.BackgroundTransparency = 0.5
-            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabMagnet.BackgroundTransparency = 0.5
+            tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = true
-            contentBrutal.Visible = false
-            contentInfo.Visible = false
+            contentMagnet.Visible = false
         end)
-        tabBrutal.MouseButton1Click:Connect(function()
-            tabBrutal.BackgroundColor3 = ungu
-            tabBrutal.BackgroundTransparency = 0.3
-            tabBrutal.TextColor3 = Color3.fromRGB(255, 255, 255)
+        tabMagnet.MouseButton1Click:Connect(function()
+            tabMagnet.BackgroundColor3 = ungu
+            tabMagnet.BackgroundTransparency = 0.3
+            tabMagnet.TextColor3 = Color3.fromRGB(255, 255, 255)
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabInfo.BackgroundTransparency = 0.5
-            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = false
-            contentBrutal.Visible = true
-            contentInfo.Visible = false
-        end)
-        tabInfo.MouseButton1Click:Connect(function()
-            tabInfo.BackgroundColor3 = ungu
-            tabInfo.BackgroundTransparency = 0.3
-            tabInfo.TextColor3 = Color3.fromRGB(255, 255, 255)
-            tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabMain.BackgroundTransparency = 0.5
-            tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabESP.BackgroundTransparency = 0.5
-            tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabBrutal.BackgroundTransparency = 0.5
-            tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
-            contentMain.Visible = false
-            contentESP.Visible = false
-            contentBrutal.Visible = false
-            contentInfo.Visible = true
+            contentMagnet.Visible = true
         end)
         
         -- ================== FUNGSI TOGGLE ==================
@@ -1161,69 +1036,24 @@ VerifyBtn.MouseButton1Click:Connect(function()
         createToggle(contentESP, "ESP BOX", hijau, function(s) espBoxEnabled = s; if not s then for _, v in pairs(espBoxes) do v[1].Visible = false end; for _, v in pairs(espNames) do v[1].Visible = false end; for _, v in pairs(espHealthBars) do v[1].Visible = false end end end, false)
         createToggle(contentESP, "HOLOGRAM", merah, function(s) hologramEnabled = s; if s then applyHologramToAll() else removeHologramFromAll() end end, false)
         
-        -- BRUTAL tab
-        createToggle(contentBrutal, "🔥 BRUTAL MODE (MASTER)", Color3.fromRGB(255, 0, 0), function(s) brutalModeEnabled = s end, false)
-        createToggle(contentBrutal, "⚡ AUTO KILL (SILENT AIM)", Color3.fromRGB(255, 0, 0), function(s) autoKillEnabled = s end, false)
-        createToggle(contentBrutal, "🎒 AUTO LOOT", Color3.fromRGB(255, 0, 0), function(s) autoLootEnabled = s end, false)
-        createToggle(contentBrutal, "🌀 TELEPORT ENEMY TO YOU", Color3.fromRGB(255, 0, 0), function(s) teleportEnemyEnabled = s end, false)
+        -- MAGNET tab
+        createToggle(contentMagnet, " MAGNETIC", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
         
-        -- INFO tab
-        local timerLabel = Instance.new("TextLabel")
-        timerLabel.Parent = contentInfo
-        timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
-        timerLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        timerLabel.BackgroundTransparency = 0.2
-        timerLabel.Text = "Memuat sisa waktu..."
-        timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        timerLabel.Font = Enum.Font.GothamBold
-        timerLabel.TextSize = 14
-        timerLabel.TextWrapped = true
-        local timerCorner = Instance.new("UICorner")
-        timerCorner.Parent = timerLabel
-        timerCorner.CornerRadius = UDim.new(0, 10)
-        
-        local infoTextLabel = Instance.new("TextLabel")
-        infoTextLabel.Parent = contentInfo
-        infoTextLabel.Size = UDim2.new(0.95, 0, 0, 120)
-        infoTextLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        infoTextLabel.BackgroundTransparency = 0.2
-        infoTextLabel.Text = "DRIP CLIENT V2.0\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131\n\n🔥 Brutal Mode: Auto Kill + Auto Loot + Teleport Enemy"
-        infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        infoTextLabel.Font = Enum.Font.Gotham
-        infoTextLabel.TextSize = 12
-        infoTextLabel.TextWrapped = true
-        infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
-        local infoCorner2 = Instance.new("UICorner")
-        infoCorner2.Parent = infoTextLabel
-        infoCorner2.CornerRadius = UDim.new(0, 10)
-        
-        -- Update timer
-        local function updateKeyTimer()
-            if not keyValid then timerLabel.Text = "Key tidak valid" return end
-            local remaining = keyExpiryTime - os.time()
-            if remaining <= 0 and keyExpiryTime ~= math.huge then timerLabel.Text = "KEY EXPIRED!" return end
-            if keyExpiryTime == math.huge then timerLabel.Text = "Sisa waktu: PERMANEN" return end
-            local hours = math.floor(remaining / 3600)
-            local minutes = math.floor((remaining % 3600) / 60)
-            local seconds = remaining % 60
-            if keyType == "1 JAM" then
-                timerLabel.Text = string.format("Sisa waktu: %02d:%02d:%02d (1 Jam)", hours, minutes, seconds)
-            elseif keyType == "1 HARI" then
-                local days = math.floor(remaining / 86400)
-                hours = math.floor((remaining % 86400) / 3600)
-                timerLabel.Text = string.format("Sisa waktu: %d hari %02d jam %02d menit", days, hours, minutes)
-            else
-                timerLabel.Text = "Sisa waktu: PERMANEN"
-            end
-        end
-        
-        task.spawn(function()
-            while keyValid and MainFrame and MainFrame.Parent do
-                updateKeyTimer()
-                task.wait(1)
-            end
-        end)
-        updateKeyTimer()
+        -- Info text di magnet tab
+        local magnetInfo = Instance.new("TextLabel")
+        magnetInfo.Parent = contentMagnet
+        magnetInfo.Size = UDim2.new(0.95, 0, 0, 80)
+        magnetInfo.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        magnetInfo.BackgroundTransparency = 0.2
+        magnetInfo.Text = "⚠️ MAGNET MODE ⚠️\n\nSemua musuh dalam radius 50 stud akan tertarik ke arahmu!\nGas bunuh mereka satu per satu 🔥"
+        magnetInfo.TextColor3 = Color3.fromRGB(255, 200, 100)
+        magnetInfo.Font = Enum.Font.GothamBold
+        magnetInfo.TextSize = 12
+        magnetInfo.TextWrapped = true
+        magnetInfo.TextYAlignment = Enum.TextYAlignment.Center
+        local magnetInfoCorner = Instance.new("UICorner")
+        magnetInfoCorner.Parent = magnetInfo
+        magnetInfoCorner.CornerRadius = UDim.new(0, 10)
         
         -- Floating button
         local menuBtn = Instance.new("ImageButton")
@@ -1269,23 +1099,21 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
-                MainFrame.Size = UDim2.new(0, 360, 0, 560)
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -280)}):Play()
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
             else
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
             end
         end)
         
-        -- Run enemy counter dan brutal mode loop
+        -- Loop enemy counter dan magnet
         RunService.RenderStepped:Connect(updateEnemyCounter)
         
         task.spawn(function()
             while true do
-                task.wait(0.1)
-                if brutalModeEnabled then
-                    if autoKillEnabled then autoKill() end
-                    if autoLootEnabled then autoLoot() end
-                    if teleportEnemyEnabled then teleportEnemyToMe() end
+                task.wait(0.05)
+                if magnetEnabled then
+                    magnetPull()
                 end
             end
         end)
@@ -1304,4 +1132,4 @@ VerifyBtn.MouseButton1Click:Connect(function()
         StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         KeyTextBox.Text = ""
     end
-end)
+-end)
