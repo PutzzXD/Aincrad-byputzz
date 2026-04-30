@@ -23,9 +23,9 @@ local merah = Color3.fromRGB(255, 80, 80)
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
-local MAX_DIST = 1000
-local MAGNET_RADIUS = 60
-local MAGNET_FORCE = 0.7
+local MAX_DIST = 115
+local MAGNET_RADIUS = 50
+local MAGNET_FORCE = 0.3
 
 -- Variabel key timer
 local keyValid = false
@@ -562,7 +562,7 @@ InfoText.Parent = InfoFrame
 InfoText.Size = UDim2.new(1, -20, 1, -10)
 InfoText.Position = UDim2.new(0, 10, 0, 5)
 InfoText.BackgroundTransparency = 1
-InfoText.Text = "Masukkan Key Anda\n\nTIPE KEY: 1 JAM | 1 HARI | PERMANEN\n\n"
+InfoText.Text = "Masukkan Key Anda\n\nTIPE KEY: 1 JAM | 1 HARI | PERMANEN\n\nMAGNET MODE READY 🔥"
 InfoText.TextColor3 = Color3.fromRGB(200, 200, 200)
 InfoText.Font = Enum.Font.Gotham
 InfoText.TextSize = 11
@@ -710,7 +710,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
             enemyCounterText.OutlineThickness = 2
             enemyCounterText.Visible = true
-            enemyCounterText.Text = "✅ ENEMY: 0 "
+            enemyCounterText.Text = "🔥 ENEMY: 0 🔥"
             updateEnemyCounter()
         end)
         
@@ -733,7 +733,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         nt.Parent = nf
         nt.Size = UDim2.new(1, 0, 1, 0)
         nt.BackgroundTransparency = 1
-        nt.Text = "✅ DRIP CLIENT Putzzdev!"
+        nt.Text = "✅ DRIP CLIENT ACTIVATED!"
         nt.TextColor3 = Color3.fromRGB(255, 255, 255)
         nt.Font = Enum.Font.GothamBold
         nt.TextSize = 16
@@ -855,7 +855,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         tabMagnet.Position = UDim2.new(0.66, 2, 0, 2)
         tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabMagnet.BackgroundTransparency = 0.5
-        tabMagnet.Text = "MAGNETIC"
+        tabMagnet.Text = "🧲 MAGNET"
         tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabMagnet.Font = Enum.Font.GothamBold
         tabMagnet.TextSize = 12
@@ -1037,7 +1037,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         createToggle(contentESP, "HOLOGRAM", merah, function(s) hologramEnabled = s; if s then applyHologramToAll() else removeHologramFromAll() end end, false)
         
         -- MAGNET tab
-        createToggle(contentMagnet, " MAGNETIC", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
+        createToggle(contentMagnet, "🧲 MAGNET PLAYER (Tarik Musuh)", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
         
         -- Info text di magnet tab
         local magnetInfo = Instance.new("TextLabel")
@@ -1132,4 +1132,4 @@ VerifyBtn.MouseButton1Click:Connect(function()
         StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         KeyTextBox.Text = ""
     end
--end)
+end)
