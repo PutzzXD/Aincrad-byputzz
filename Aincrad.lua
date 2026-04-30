@@ -1,9 +1,6 @@
--- ================== DRIP CLIENT V1.4 (FINAL + INSTANT RESCUE) ==================
--- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
--- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- Crosshair di tengah layar, Enemy counter (sesuai ESP, jarak & visible),
--- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
--- TAMBAHAN: Instant Rescue / Auto Revive (Revive otomatis tim yang down di semua map)
+-- ================== DRIP CLIENT V2.0 (BRUTAL MODE + FIX MENU) ==================
+-- Fix: menu muncul setelah key valid
+-- Tambahan: Brutal Mode (Auto Kill, Auto Loot, Teleport Enemy)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,6 +10,7 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualUser = game:GetService("VirtualUser")
 
 -- Warna menu ungu
 local ungu = Color3.fromRGB(128, 0, 255)
@@ -42,6 +40,12 @@ local espBoxes = {}
 local espNames = {}
 local espHealthBars = {}
 
+-- Brutal mode vars
+local brutalModeEnabled = false
+local autoKillEnabled = false
+local autoLootEnabled = false
+local teleportEnemyEnabled = false
+
 local hologramHighlights = {}
 
 local noclipEnabled = false
@@ -64,89 +68,7 @@ local crosshairObject = nil
 -- Enemy counter
 local enemyCounterText = nil
 
--- ================== INSTANT RESCUE / AUTO REVIVE ==================
-local instantReviveEnabled = true  -- Default nyala (bisa lo toggle lewat menu nanti)
-local reviveCooldown = false
-local lastReviveCheck = 0
-
--- Cari teman satu tim yang sedang down (butuh di-revive)
-local function getDownedTeammate()
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Team == LocalPlayer.Team then
-            local char = player.Character
-            if char then
-                local humanoid = char:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health <= 0 and humanoid:GetState() == Enum.HumanoidStateType.Dead then
-                    return player, char
-                end
-            end
-        end
-    end
-    return nil, nil
-end
-
--- Fungsi auto revive
-local function autoRevive()
-    if not instantReviveEnabled then return end
-    if reviveCooldown then return end
-    
-    local now = tick()
-    if now - lastReviveCheck < 1.5 then return end  -- cek setiap 1.5 detik
-    lastReviveCheck = now
-    
-    local downedPlayer, downedChar = getDownedTeammate()
-    if downedPlayer and downedChar then
-        local hrp = downedChar:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local myChar = LocalPlayer.Character
-            local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            if myHrp then
-                -- Teleport ke posisi teman yang down (biar dalam jangkauan revive)
-                local distance = (myHrp.Position - hrp.Position).Magnitude
-                if distance > 8 then
-                    myHrp.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
-                    task.wait(0.1)
-                end
-            end
-            
-            -- Coba cari remote revive (beberapa game punya cara berbeda)
-            reviveCooldown = true
-            
-            -- Method 1: Cari RemoteEvent umum
-            local reviveRemote = ReplicatedStorage:FindFirstChild("ReviveRemote")
-            if not reviveRemote then
-                for _, v in pairs(ReplicatedStorage:GetDescendants()) do
-                    if v:IsA("RemoteEvent") and (v.Name:lower():find("revive") or v.Name:lower():find("rescue")) then
-                        reviveRemote = v
-                        break
-                    end
-                end
-            end
-            
-            if reviveRemote then
-                -- Kirim remote revive dengan target player yang down
-                pcall(function()
-                    reviveRemote:FireServer(downedPlayer)
-                end)
-            end
-            
-            -- Method 2: Simulasi tombol interaksi (beberapa game pake proximity)
-            local proximity = downedChar:FindFirstChild("ProximityPrompt")
-            if proximity then
-                pcall(function()
-                    proximity:InputHoldBegin()
-                    task.wait(0.5)
-                    proximity:InputHoldEnd()
-                end)
-            end
-            
-            task.wait(1) -- cooldown biar gak spam revive
-            reviveCooldown = false
-        end
-    end
-end
-
--- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
+-- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -161,7 +83,6 @@ local function cekKey(key)
         return false, "Gagal membaca database!"
     end
     
-    -- Cari key di database
     local foundKeyData = nil
     local keyId = nil
     for id, keyData in pairs(jsonData) do
@@ -175,7 +96,6 @@ local function cekKey(key)
         return false, "KEY TIDAK TERDAFTAR!"
     end
     
-    -- Tentukan masa berlaku (dalam hari) berdasarkan jenis
     local jenis = foundKeyData.jenis or "PERMANEN"
     local expiryDays = 0
     if jenis == "1 JAM" then
@@ -188,12 +108,10 @@ local function cekKey(key)
         expiryDays = 1
     end
     
-    -- Ambil firstUsed dari database, jika tidak ada maka key baru
     local firstUsed = foundKeyData.firstUsed
     local currentTime = os.time()
     
     if not firstUsed then
-        -- Key baru: simpan firstUsed dan expiryDays ke Firebase menggunakan PATCH
         firstUsed = currentTime
         local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
         local updateData = {
@@ -201,38 +119,23 @@ local function cekKey(key)
             expiryDays = expiryDays
         }
         local body = HttpService:JSONEncode(updateData)
-        -- Gunakan RequestAsync (atau fallback untuk executor yang tidak support)
-        local requestSuccess = false
         if syn and syn.request then
-            local response = syn.request({
+            syn.request({
                 Url = updateUrl,
                 Method = "PATCH",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = body
             })
-            requestSuccess = (response and response.Success)
         elseif http and http.request then
-            local response = http.request({
+            http.request({
                 Url = updateUrl,
                 Method = "PATCH",
                 Headers = {["Content-Type"] = "application/json"},
                 Body = body
             })
-            requestSuccess = (response and response.Success)
-        else
-            -- Fallback: pcall dengan HttpService (mungkin tidak berfungsi di semua executor)
-            pcall(function()
-                HttpService:RequestAsync({
-                    Url = updateUrl,
-                    Method = "PATCH",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = body
-                })
-            end)
         end
     end
     
-    -- Hitung expiry time
     local expiryTime = firstUsed + (expiryDays * 86400)
     if expiryDays >= 999999 then
         expiryTime = math.huge
@@ -242,14 +145,92 @@ local function cekKey(key)
         return false, "KEY SUDAH EXPIRED!"
     end
     
-    -- Simpan info ke variabel global
     keyValid = true
     keyExpiryTime = expiryTime
     keyType = jenis
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== HOLOGRAM (Highlight) ==================
+-- ================== BRUTAL MODE ==================
+-- Auto Kill: tembak otomatis ke musuh terdekat
+local function autoKill()
+    if not brutalModeEnabled or not autoKillEnabled then return end
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local nearestEnemy = nil
+    local nearestDist = math.huge
+    local myPos = myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+                local hrp = char.HumanoidRootPart
+                local dist = myPos and (myPos - hrp.Position).Magnitude or math.huge
+                if dist < nearestDist and dist <= MAX_DIST then
+                    nearestDist = dist
+                    nearestEnemy = player
+                end
+            end
+        end
+    end
+    
+    if nearestEnemy then
+        local targetChar = nearestEnemy.Character
+        if targetChar and targetChar:FindFirstChild("Head") then
+            -- Arahkan kamera ke target (silent aim)
+            local targetPos = targetChar.Head.Position
+            local currentCamPos = Camera.CFrame.Position
+            local direction = (targetPos - currentCamPos).unit
+            Camera.CFrame = CFrame.new(currentCamPos, currentCamPos + direction)
+            
+            -- Simulasi tembak (klik mouse)
+            VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
+        end
+    end
+end
+
+-- Auto Loot: ambil item terdekat otomatis
+local function autoLoot()
+    if not brutalModeEnabled or not autoLootEnabled then return end
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+    
+    for _, item in pairs(workspace:GetDescendants()) do
+        if item:IsA("Tool") or (item.Name:lower():find("medkit") or item.Name:lower():find("ammo")) then
+            if item.Parent ~= myChar and item:FindFirstChild("Handle") then
+                local dist = (myHrp.Position - item.Handle.Position).Magnitude
+                if dist <= 15 then
+                    fireproximityprompt(item)
+                end
+            end
+        end
+    end
+end
+
+-- Teleport musuh ke kamu
+local function teleportEnemyToMe()
+    if not brutalModeEnabled or not teleportEnemyEnabled then return end
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local myChar = LocalPlayer.Character
+                if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                    char.HumanoidRootPart.CFrame = myChar.HumanoidRootPart.CFrame + Vector3.new(0, 2, 0)
+                end
+                task.wait(0.5)
+            end
+        end
+    end
+end
+
+-- ================== HOLOGRAM ==================
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -290,14 +271,7 @@ local function removeHologramFromAll()
     end
 end
 
-local function onCharacterAdded(player, character)
-    if hologramEnabled and player ~= LocalPlayer then
-        task.wait(0.2)
-        applyHologram(player)
-    end
-end
-
--- ================== ESP LINE (putih, dari atas ke HEAD) ==================
+-- ================== ESP LINE ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -307,7 +281,7 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX (hijau, ketebalan 2.2) ==================
+-- ================== ESP BOX ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -349,7 +323,6 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE (ke HEAD player)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -368,7 +341,6 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX (dari kepala ke kaki)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -393,7 +365,6 @@ local function updateESP()
         end
     end
     
-    -- NAME
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -415,7 +386,6 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR (vertikal di samping kanan box)
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -460,10 +430,7 @@ Players.PlayerAdded:Connect(function(p)
     task.wait(0.5)
     createLine(p)
     createBox(p)
-    p.CharacterAdded:Connect(function(char)
-        onCharacterAdded(p, char)
-    end)
-    if hologramEnabled and p.Character then
+    if hologramEnabled then
         task.wait(0.5)
         applyHologram(p)
     end
@@ -475,7 +442,7 @@ end)
 
 RunService.RenderStepped:Connect(updateESP)
 
--- ================== NOCLIP ==================
+-- ================== FUNGSI UTILITY ==================
 local function updateNoclip()
     if noclipConn then noclipConn:Disconnect() end
     noclipConn = RunService.Stepped:Connect(function()
@@ -489,7 +456,6 @@ local function updateNoclip()
     end)
 end
 
--- ================== GOD MODE ==================
 local function updateGodMode()
     if godModeConn then godModeConn:Disconnect() end
     godModeConn = RunService.Heartbeat:Connect(function()
@@ -502,7 +468,6 @@ local function updateGodMode()
     end)
 end
 
--- ================== SPEED BOOST ==================
 local function setSpeed(enabled)
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if hum then
@@ -510,7 +475,6 @@ local function setSpeed(enabled)
     end
 end
 
--- ================== INFINITY JUMP ==================
 local function updateInfJump()
     if infJumpConn then infJumpConn:Disconnect() end
     infJumpConn = UserInputService.JumpRequest:Connect(function()
@@ -526,7 +490,6 @@ local function updateInfJump()
     end)
 end
 
--- ================== CROSSHAIR ==================
 local function createCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
     local gui = Instance.new("ScreenGui")
@@ -559,7 +522,6 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
--- ================== ENEMY COUNTER (SESUAI ESP) ==================
 local function getEnemyCountWithDistance()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
@@ -657,7 +619,7 @@ InfoText.Parent = InfoFrame
 InfoText.Size = UDim2.new(1, -20, 1, -10)
 InfoText.Position = UDim2.new(0, 10, 0, 5)
 InfoText.BackgroundTransparency = 1
-InfoText.Text = "Masukkan Key Anda\n\nTIPE KEY: 1 JAM | 1 HARI | PERMANEN"
+InfoText.Text = "Masukkan Key Anda\n\nTIPE KEY: 1 JAM | 1 HARI | PERMANEN\n\nBRUTAL MODE READY 🔥"
 InfoText.TextColor3 = Color3.fromRGB(200, 200, 200)
 InfoText.Font = Enum.Font.Gotham
 InfoText.TextSize = 11
@@ -780,19 +742,43 @@ VerifyBtn.MouseButton1Click:Connect(function()
     local valid, message = cekKey(key)
     showLoading(false)
     VerifyBtn.Text = "VERIFIKASI KEY"
+    
     if valid then
         StatusLabel.Text = "✅ " .. message
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
         TweenService:Create(KeyFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 100, 0)}):Play()
         task.wait(0.3)
+        
+        -- Loading countdown
         for i = 3, 1, -1 do
             StatusLabel.Text = "Loading " .. i .. "..."
             task.wait(1)
         end
-        KeyGui:Destroy()
-        initESP()
-        createEnemyCounter()
         
+        -- Destroy key GUI
+        KeyGui:Destroy()
+        
+        -- Init ESP & Enemy Counter
+        initESP()
+        
+        -- Create enemy counter dengan aman
+        local success, err = pcall(function()
+            enemyCounterText = Drawing.new("Text")
+            enemyCounterText.Size = 20
+            enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
+            enemyCounterText.Center = true
+            enemyCounterText.Outline = true
+            enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
+            enemyCounterText.Visible = true
+            enemyCounterText.Text = "ENEMY: 0"
+            updateEnemyCounter()
+        end)
+        
+        if not success then
+            warn("Enemy counter error: " .. tostring(err))
+        end
+        
+        -- Notification
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
         local nf = Instance.new("Frame")
@@ -822,8 +808,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 360, 0, 520)
-        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+        MainFrame.Size = UDim2.new(0, 360, 0, 560)
+        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -859,12 +845,11 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Parent = Header
         Title.Size = UDim2.new(1, 0, 1, 0)
         Title.BackgroundTransparency = 1
-        Title.Text = "DRIP CLIENT"
+        Title.Text = "DRIP CLIENT V2.0"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
-        -- Tombol minimize dengan image
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -881,25 +866,15 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if minimized then
                 MainFrame.Size = UDim2.new(0, 360, 0, 60)
             else
-                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+                MainFrame.Size = UDim2.new(0, 360, 0, 560)
             end
         end)
-        
-        local Subtitle = Instance.new("TextLabel")
-        Subtitle.Parent = Header
-        Subtitle.Size = UDim2.new(1, 0, 0, 20)
-        Subtitle.Position = UDim2.new(0, 0, 0, 40)
-        Subtitle.BackgroundTransparency = 1
-        Subtitle.Text = ""
-        Subtitle.TextColor3 = ungu
-        Subtitle.Font = Enum.Font.Gotham
-        Subtitle.TextSize = 11
         
         -- Tab Bar
         local TabBar = Instance.new("Frame")
         TabBar.Parent = MainFrame
         TabBar.Size = UDim2.new(0.96, 0, 0, 40)
-        TabBar.Position = UDim2.new(0.02, 0, 0.13, 0)
+        TabBar.Position = UDim2.new(0.02, 0, 0.12, 0)
         TabBar.BackgroundColor3 = gray
         TabBar.BackgroundTransparency = 0.3
         TabBar.BorderSizePixel = 0
@@ -909,42 +884,56 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabMain = Instance.new("TextButton")
         tabMain.Parent = TabBar
-        tabMain.Size = UDim2.new(0.33, -2, 1, -4)
+        tabMain.Size = UDim2.new(0.25, -2, 1, -4)
         tabMain.Position = UDim2.new(0, 2, 0, 2)
         tabMain.BackgroundColor3 = ungu
         tabMain.BackgroundTransparency = 0.3
         tabMain.Text = "MAIN"
         tabMain.TextColor3 = Color3.fromRGB(255, 255, 255)
         tabMain.Font = Enum.Font.GothamBold
-        tabMain.TextSize = 14
+        tabMain.TextSize = 12
         local tabMainCorner = Instance.new("UICorner")
         tabMainCorner.Parent = tabMain
         tabMainCorner.CornerRadius = UDim.new(0, 8)
         
         local tabESP = Instance.new("TextButton")
         tabESP.Parent = TabBar
-        tabESP.Size = UDim2.new(0.33, -2, 1, -4)
-        tabESP.Position = UDim2.new(0.33, 2, 0, 2)
+        tabESP.Size = UDim2.new(0.25, -2, 1, -4)
+        tabESP.Position = UDim2.new(0.25, 2, 0, 2)
         tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabESP.BackgroundTransparency = 0.5
         tabESP.Text = "ESP"
         tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabESP.Font = Enum.Font.GothamBold
-        tabESP.TextSize = 14
+        tabESP.TextSize = 12
         local tabESPCorner = Instance.new("UICorner")
         tabESPCorner.Parent = tabESP
         tabESPCorner.CornerRadius = UDim.new(0, 8)
         
+        local tabBrutal = Instance.new("TextButton")
+        tabBrutal.Parent = TabBar
+        tabBrutal.Size = UDim2.new(0.25, -2, 1, -4)
+        tabBrutal.Position = UDim2.new(0.5, 2, 0, 2)
+        tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        tabBrutal.BackgroundTransparency = 0.5
+        tabBrutal.Text = "🔥BRUTAL"
+        tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
+        tabBrutal.Font = Enum.Font.GothamBold
+        tabBrutal.TextSize = 12
+        local tabBrutalCorner = Instance.new("UICorner")
+        tabBrutalCorner.Parent = tabBrutal
+        tabBrutalCorner.CornerRadius = UDim.new(0, 8)
+        
         local tabInfo = Instance.new("TextButton")
         tabInfo.Parent = TabBar
-        tabInfo.Size = UDim2.new(0.33, -2, 1, -4)
-        tabInfo.Position = UDim2.new(0.66, 2, 0, 2)
+        tabInfo.Size = UDim2.new(0.25, -2, 1, -4)
+        tabInfo.Position = UDim2.new(0.75, 2, 0, 2)
         tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabInfo.BackgroundTransparency = 0.5
         tabInfo.Text = "INFO"
         tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabInfo.Font = Enum.Font.GothamBold
-        tabInfo.TextSize = 14
+        tabInfo.TextSize = 12
         local tabInfoCorner = Instance.new("UICorner")
         tabInfoCorner.Parent = tabInfo
         tabInfoCorner.CornerRadius = UDim.new(0, 8)
@@ -953,7 +942,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         local contentMain = Instance.new("ScrollingFrame")
         contentMain.Parent = MainFrame
         contentMain.Size = UDim2.new(0.94, 0, 0.74, 0)
-        contentMain.Position = UDim2.new(0.03, 0, 0.21, 0)
+        contentMain.Position = UDim2.new(0.03, 0, 0.2, 0)
         contentMain.BackgroundColor3 = gray
         contentMain.BackgroundTransparency = 0.4
         contentMain.BorderSizePixel = 0
@@ -972,7 +961,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         local contentESP = Instance.new("ScrollingFrame")
         contentESP.Parent = MainFrame
         contentESP.Size = UDim2.new(0.94, 0, 0.74, 0)
-        contentESP.Position = UDim2.new(0.03, 0, 0.21, 0)
+        contentESP.Position = UDim2.new(0.03, 0, 0.2, 0)
         contentESP.BackgroundColor3 = gray
         contentESP.BackgroundTransparency = 0.4
         contentESP.BorderSizePixel = 0
@@ -989,10 +978,30 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 10)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
+        local contentBrutal = Instance.new("ScrollingFrame")
+        contentBrutal.Parent = MainFrame
+        contentBrutal.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentBrutal.Position = UDim2.new(0.03, 0, 0.2, 0)
+        contentBrutal.BackgroundColor3 = gray
+        contentBrutal.BackgroundTransparency = 0.4
+        contentBrutal.BorderSizePixel = 0
+        contentBrutal.ScrollBarThickness = 5
+        contentBrutal.ScrollBarImageColor3 = ungu
+        contentBrutal.CanvasSize = UDim2.new(0, 0, 0, 0)
+        contentBrutal.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        contentBrutal.Visible = false
+        local contentBrutalCorner = Instance.new("UICorner")
+        contentBrutalCorner.Parent = contentBrutal
+        contentBrutalCorner.CornerRadius = UDim.new(0, 12)
+        local layoutBrutal = Instance.new("UIListLayout")
+        layoutBrutal.Parent = contentBrutal
+        layoutBrutal.Padding = UDim.new(0, 10)
+        layoutBrutal.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
         local contentInfo = Instance.new("ScrollingFrame")
         contentInfo.Parent = MainFrame
         contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
-        contentInfo.Position = UDim2.new(0.03, 0, 0.21, 0)
+        contentInfo.Position = UDim2.new(0.03, 0, 0.2, 0)
         contentInfo.BackgroundColor3 = gray
         contentInfo.BackgroundTransparency = 0.4
         contentInfo.BorderSizePixel = 0
@@ -1017,11 +1026,15 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabBrutal.BackgroundTransparency = 0.5
+            tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabInfo.BackgroundTransparency = 0.5
             tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = true
             contentESP.Visible = false
+            contentBrutal.Visible = false
             contentInfo.Visible = false
         end)
         tabESP.MouseButton1Click:Connect(function()
@@ -1031,11 +1044,33 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabBrutal.BackgroundTransparency = 0.5
+            tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabInfo.BackgroundTransparency = 0.5
             tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = true
+            contentBrutal.Visible = false
+            contentInfo.Visible = false
+        end)
+        tabBrutal.MouseButton1Click:Connect(function()
+            tabBrutal.BackgroundColor3 = ungu
+            tabBrutal.BackgroundTransparency = 0.3
+            tabBrutal.TextColor3 = Color3.fromRGB(255, 255, 255)
+            tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabMain.BackgroundTransparency = 0.5
+            tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabESP.BackgroundTransparency = 0.5
+            tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabInfo.BackgroundTransparency = 0.5
+            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+            contentMain.Visible = false
+            contentESP.Visible = false
+            contentBrutal.Visible = true
             contentInfo.Visible = false
         end)
         tabInfo.MouseButton1Click:Connect(function()
@@ -1048,8 +1083,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabBrutal.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabBrutal.BackgroundTransparency = 0.5
+            tabBrutal.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = false
+            contentBrutal.Visible = false
             contentInfo.Visible = true
         end)
         
@@ -1111,58 +1150,24 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end
         
         -- MAIN tab
-        createToggle(contentMain, "NOCLIP", ungu, function(s)
-            noclipEnabled = s
-            if s then updateNoclip() end
-        end, false)
-        
-        createToggle(contentMain, "GOD MODE", ungu, function(s)
-            godModeEnabled = s
-            if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
-        end, false)
-        
-        createToggle(contentMain, "SPEED 70", ungu, function(s)
-            speedEnabled = s
-            setSpeed(s)
-        end, false)
-        
-        createToggle(contentMain, "INFINITY JUMP", ungu, function(s)
-            infJumpEnabled = s
-            if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end
-        end, false)
-        
-        createToggle(contentMain, "CROSSHAIR", ungu, function(s)
-            crosshairEnabled = s
-            if s then createCrosshair() else removeCrosshair() end
-        end, false)
-        
-        createToggle(contentMain, "AUTO RESCUE", ungu, function(s)
-            instantReviveEnabled = s
-        end, true)  -- Default ON
+        createToggle(contentMain, "NOCLIP", ungu, function(s) noclipEnabled = s; if s then updateNoclip() end end, false)
+        createToggle(contentMain, "GOD MODE", ungu, function(s) godModeEnabled = s; if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end end, false)
+        createToggle(contentMain, "SPEED 70", ungu, function(s) speedEnabled = s; setSpeed(s) end, false)
+        createToggle(contentMain, "INFINITY JUMP", ungu, function(s) infJumpEnabled = s; if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end end, false)
+        createToggle(contentMain, "CROSSHAIR", ungu, function(s) crosshairEnabled = s; if s then createCrosshair() else removeCrosshair() end end, false)
         
         -- ESP tab
-        createToggle(contentESP, "ESP LINE", putih, function(s)
-            espLineEnabled = s
-            if not s then
-                for _, v in pairs(espLines) do v[1].Visible = false end
-            end
-        end, false)
+        createToggle(contentESP, "ESP LINE", putih, function(s) espLineEnabled = s; if not s then for _, v in pairs(espLines) do v[1].Visible = false end end end, false)
+        createToggle(contentESP, "ESP BOX", hijau, function(s) espBoxEnabled = s; if not s then for _, v in pairs(espBoxes) do v[1].Visible = false end; for _, v in pairs(espNames) do v[1].Visible = false end; for _, v in pairs(espHealthBars) do v[1].Visible = false end end end, false)
+        createToggle(contentESP, "HOLOGRAM", merah, function(s) hologramEnabled = s; if s then applyHologramToAll() else removeHologramFromAll() end end, false)
         
-        createToggle(contentESP, "ESP BOX", hijau, function(s)
-            espBoxEnabled = s
-            if not s then
-                for _, v in pairs(espBoxes) do v[1].Visible = false end
-                for _, v in pairs(espNames) do v[1].Visible = false end
-                for _, v in pairs(espHealthBars) do v[1].Visible = false end
-            end
-        end, false)
+        -- BRUTAL tab
+        createToggle(contentBrutal, "🔥 BRUTAL MODE (MASTER)", Color3.fromRGB(255, 0, 0), function(s) brutalModeEnabled = s end, false)
+        createToggle(contentBrutal, "⚡ AUTO KILL (SILENT AIM)", Color3.fromRGB(255, 0, 0), function(s) autoKillEnabled = s end, false)
+        createToggle(contentBrutal, "🎒 AUTO LOOT", Color3.fromRGB(255, 0, 0), function(s) autoLootEnabled = s end, false)
+        createToggle(contentBrutal, "🌀 TELEPORT ENEMY TO YOU", Color3.fromRGB(255, 0, 0), function(s) teleportEnemyEnabled = s end, false)
         
-        createToggle(contentESP, "HOLOGRAM", merah, function(s)
-            hologramEnabled = s
-            if s then applyHologramToAll() else removeHologramFromAll() end
-        end, false)
-        
-        -- ================== TAB INFO (dengan timer key) ==================
+        -- INFO tab
         local timerLabel = Instance.new("TextLabel")
         timerLabel.Parent = contentInfo
         timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
@@ -1179,34 +1184,25 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local infoTextLabel = Instance.new("TextLabel")
         infoTextLabel.Parent = contentInfo
-        infoTextLabel.Size = UDim2.new(0.95, 0, 0, 100)
+        infoTextLabel.Size = UDim2.new(0.95, 0, 0, 120)
         infoTextLabel.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
         infoTextLabel.BackgroundTransparency = 0.2
-        infoTextLabel.Text = "DRIP CLIENT\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131"
+        infoTextLabel.Text = "DRIP CLIENT V2.0\n\nDeveloper: Putzzdev\nTikTok: Putzz_mvpp\nWhatsApp: 088976255131\n\n🔥 Brutal Mode: Auto Kill + Auto Loot + Teleport Enemy"
         infoTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         infoTextLabel.Font = Enum.Font.Gotham
-        infoTextLabel.TextSize = 14
+        infoTextLabel.TextSize = 12
         infoTextLabel.TextWrapped = true
         infoTextLabel.TextYAlignment = Enum.TextYAlignment.Center
         local infoCorner2 = Instance.new("UICorner")
         infoCorner2.Parent = infoTextLabel
         infoCorner2.CornerRadius = UDim.new(0, 10)
         
-        -- Update timer setiap detik
+        -- Update timer
         local function updateKeyTimer()
-            if not keyValid then
-                timerLabel.Text = "Key tidak valid"
-                return
-            end
+            if not keyValid then timerLabel.Text = "Key tidak valid" return end
             local remaining = keyExpiryTime - os.time()
-            if remaining <= 0 and keyExpiryTime ~= math.huge then
-                timerLabel.Text = "KEY EXPIRED!"
-                return
-            end
-            if keyExpiryTime == math.huge then
-                timerLabel.Text = "Sisa waktu: PERMANEN"
-                return
-            end
+            if remaining <= 0 and keyExpiryTime ~= math.huge then timerLabel.Text = "KEY EXPIRED!" return end
+            if keyExpiryTime == math.huge then timerLabel.Text = "Sisa waktu: PERMANEN" return end
             local hours = math.floor(remaining / 3600)
             local minutes = math.floor((remaining % 3600) / 60)
             local seconds = remaining % 60
@@ -1229,7 +1225,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end)
         updateKeyTimer()
         
-        -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
+        -- Floating button
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -1273,21 +1269,24 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
-                MainFrame.Size = UDim2.new(0, 360, 0, 520)
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
+                MainFrame.Size = UDim2.new(0, 360, 0, 560)
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -280)}):Play()
             else
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
             end
         end)
         
-        -- Update enemy counter secara berkala
+        -- Run enemy counter dan brutal mode loop
         RunService.RenderStepped:Connect(updateEnemyCounter)
         
-        -- Loop auto revive (cek setiap detik)
         task.spawn(function()
             while true do
-                autoRevive()
-                task.wait(1)
+                task.wait(0.1)
+                if brutalModeEnabled then
+                    if autoKillEnabled then autoKill() end
+                    if autoLootEnabled then autoLoot() end
+                    if teleportEnemyEnabled then teleportEnemyToMe() end
+                end
             end
         end)
         
