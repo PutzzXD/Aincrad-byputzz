@@ -1,8 +1,9 @@
--- ================== DRIP CLIENT V1.3 (FINAL) ==================
+-- ================== DRIP CLIENT V1.4 (FINAL + INSTANT RESCUE) ==================
 -- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
 -- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
+-- Crosshair di tengah layar, Enemy counter (sesuai ESP, jarak & visible),
 -- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
+-- TAMBAHAN: Instant Rescue / Auto Revive (Revive otomatis tim yang down di semua map)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,6 +12,7 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Warna menu ungu
 local ungu = Color3.fromRGB(128, 0, 255)
@@ -61,6 +63,88 @@ local crosshairObject = nil
 
 -- Enemy counter
 local enemyCounterText = nil
+
+-- ================== INSTANT RESCUE / AUTO REVIVE ==================
+local instantReviveEnabled = true  -- Default nyala (bisa lo toggle lewat menu nanti)
+local reviveCooldown = false
+local lastReviveCheck = 0
+
+-- Cari teman satu tim yang sedang down (butuh di-revive)
+local function getDownedTeammate()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Team == LocalPlayer.Team then
+            local char = player.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health <= 0 and humanoid:GetState() == Enum.HumanoidStateType.Dead then
+                    return player, char
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+-- Fungsi auto revive
+local function autoRevive()
+    if not instantReviveEnabled then return end
+    if reviveCooldown then return end
+    
+    local now = tick()
+    if now - lastReviveCheck < 1.5 then return end  -- cek setiap 1.5 detik
+    lastReviveCheck = now
+    
+    local downedPlayer, downedChar = getDownedTeammate()
+    if downedPlayer and downedChar then
+        local hrp = downedChar:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local myChar = LocalPlayer.Character
+            local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myHrp then
+                -- Teleport ke posisi teman yang down (biar dalam jangkauan revive)
+                local distance = (myHrp.Position - hrp.Position).Magnitude
+                if distance > 8 then
+                    myHrp.CFrame = hrp.CFrame + Vector3.new(0, 1, 0)
+                    task.wait(0.1)
+                end
+            end
+            
+            -- Coba cari remote revive (beberapa game punya cara berbeda)
+            reviveCooldown = true
+            
+            -- Method 1: Cari RemoteEvent umum
+            local reviveRemote = ReplicatedStorage:FindFirstChild("ReviveRemote")
+            if not reviveRemote then
+                for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+                    if v:IsA("RemoteEvent") and (v.Name:lower():find("revive") or v.Name:lower():find("rescue")) then
+                        reviveRemote = v
+                        break
+                    end
+                end
+            end
+            
+            if reviveRemote then
+                -- Kirim remote revive dengan target player yang down
+                pcall(function()
+                    reviveRemote:FireServer(downedPlayer)
+                end)
+            end
+            
+            -- Method 2: Simulasi tombol interaksi (beberapa game pake proximity)
+            local proximity = downedChar:FindFirstChild("ProximityPrompt")
+            if proximity then
+                pcall(function()
+                    proximity:InputHoldBegin()
+                    task.wait(0.5)
+                    proximity:InputHoldEnd()
+                end)
+            end
+            
+            task.wait(1) -- cooldown biar gak spam revive
+            reviveCooldown = false
+        end
+    end
+end
 
 -- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
 local function cekKey(key)
@@ -475,36 +559,38 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
--- ================== ENEMY COUNTER ==================
-local function createEnemyCounter()
-    if enemyCounterText then pcall(function() enemyCounterText:Remove() end) end
-    enemyCounterText = Drawing.new("Text")
-    enemyCounterText.Size = 20
-    enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
-    enemyCounterText.Center = true
-    enemyCounterText.Outline = true
-    enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
-    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
-    enemyCounterText.Visible = true
-    enemyCounterText.Text = "ENEMY: 0"
-end
-
-local function updateEnemyCounter()
-    if not enemyCounterText then return end
+-- ================== ENEMY COUNTER (SESUAI ESP) ==================
+local function getEnemyCountWithDistance()
+    local myChar = LocalPlayer.Character
+    local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
+    if not myPos then return 0 end
+    
     local count = 0
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local char = player.Character
             if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-                count = count + 1
+                local hrp = char.HumanoidRootPart
+                local dist = (myPos - hrp.Position).Magnitude
+                if dist <= MAX_DIST then
+                    local headPos = char.Head.Position
+                    local vec, onScreen = Camera:WorldToViewportPoint(headPos)
+                    if onScreen then
+                        count = count + 1
+                    end
+                end
             end
         end
     end
+    return count
+end
+
+local function updateEnemyCounter()
+    if not enemyCounterText then return end
+    local count = getEnemyCountWithDistance()
     enemyCounterText.Text = "ENEMY: " .. count
     enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
 end
-
-RunService.RenderStepped:Connect(updateEnemyCounter)
 
 -- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
@@ -1050,6 +1136,10 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then createCrosshair() else removeCrosshair() end
         end, false)
         
+        createToggle(contentMain, "AUTO RESCUE", ungu, function(s)
+            instantReviveEnabled = s
+        end, true)  -- Default ON
+        
         -- ESP tab
         createToggle(contentESP, "ESP LINE", putih, function(s)
             espLineEnabled = s
@@ -1187,6 +1277,17 @@ VerifyBtn.MouseButton1Click:Connect(function()
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
             else
                 TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
+            end
+        end)
+        
+        -- Update enemy counter secara berkala
+        RunService.RenderStepped:Connect(updateEnemyCounter)
+        
+        -- Loop auto revive (cek setiap detik)
+        task.spawn(function()
+            while true do
+                autoRevive()
+                task.wait(1)
             end
         end)
         
