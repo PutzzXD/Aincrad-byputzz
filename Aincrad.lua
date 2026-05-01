@@ -1,9 +1,8 @@
--- ================== DRIP CLIENT V2.4 (MAGNET INSTANT + AUTO ATTACK + ENEMY DETECTION) ==================
--- Fix: Tidak ada emoji
--- Fitur: ESP Line, ESP Box, Hologram, Noclip, God Mode, Speed 70, Infinity Jump, Crosshair
--- Magnet Instant: Teleport musuh ke depan player (server-side velocity)
--- Auto Attack: Ayun otomatis ke musuh yang ketarik
--- Enemy Detection: Deteksi musuh berdasarkan arah hadap kamera
+-- ================== DRIP CLIENT V2.5 (MAGNET CLIENT-SIDE + AUTO ATTACK) ==================
+-- Semua fitur work, ga pake emoji
+-- Magnet: Musuh cuma bergerak di layar lo doang (client-side) - di layar musuh mereka jalan normal
+-- Enemy Counter: Deteksi semua musuh
+-- Auto Attack: Ayun otomatis ke musuh terdekat yang sudah ke tarik
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -24,7 +23,7 @@ local merah = Color3.fromRGB(255, 80, 80)
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
-local MAX_DIST = 200
+local MAX_DIST = 115
 local MAGNET_RADIUS = 80
 local ATTACK_RADIUS = 12
 
@@ -60,6 +59,9 @@ local enemyCounterText = nil
 
 local lastAttackTime = 0
 local ATTACK_COOLDOWN = 0.3
+
+-- Simpan posisi asli musuh untuk client-side magnet
+local originalPositions = {}
 
 local function cekKey(key)
     local success, data = pcall(function()
@@ -133,17 +135,18 @@ local function cekKey(key)
     return true, "KEY VALID (" .. jenis .. ")"
 end
 
-local function getEnemiesInFront()
-    local enemies = {}
+-- Magnet Client-Side: Musuh cuma bergerak di layar lo
+local function magnetClientSide()
+    if not magnetEnabled then return end
+    
     local myChar = LocalPlayer.Character
-    if not myChar then return enemies end
+    if not myChar then return end
     
     local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return enemies end
+    if not myHrp then return end
     
-    local cameraCF = Camera.CFrame
-    local cameraPos = cameraCF.Position
-    local cameraForward = cameraCF.LookVector
+    local myPos = myHrp.Position
+    local myCF = myHrp.CFrame
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
@@ -151,18 +154,38 @@ local function getEnemiesInFront()
             if char then
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if hrp then
-                    local dirToEnemy = (hrp.Position - cameraPos).unit
-                    local dot = cameraForward:Dot(dirToEnemy)
-                    if dot > 0.3 then
-                        table.insert(enemies, char)
+                    local dist = (myPos - hrp.Position).Magnitude
+                    
+                    -- Simpan posisi asli kalo belum ada
+                    if not originalPositions[player] then
+                        originalPositions[player] = hrp.Position
+                    end
+                    
+                    if dist <= MAGNET_RADIUS then
+                        -- Target posisi di depan player
+                        local targetPos = myPos + (myCF.LookVector * 4)
+                        -- Pindahkan musuh secara client-side (cuma keliatan di layar lo)
+                        hrp.CFrame = CFrame.new(targetPos)
+                    else
+                        -- Balikin ke posisi asli kalo di luar radius
+                        if originalPositions[player] then
+                            hrp.CFrame = CFrame.new(originalPositions[player])
+                        end
                     end
                 end
             end
         end
     end
-    return enemies
 end
 
+-- Reset posisi player yang lepas radius atau mati
+local function resetOriginalPosition(player)
+    originalPositions[player] = nil
+end
+
+Players.PlayerRemoving:Connect(resetOriginalPosition)
+
+-- Auto Attack ke musuh terdekat
 local function getClosestEnemy()
     local myChar = LocalPlayer.Character
     if not myChar then return nil end
@@ -212,42 +235,12 @@ local function autoAttack()
         local cameraCF = Camera.CFrame
         local direction = (targetHrp.Position - cameraCF.Position).unit
         Camera.CFrame = CFrame.new(cameraCF.Position, cameraCF.Position + direction)
-        
         VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
         lastAttackTime = now
     end
 end
 
-local function magnetInstant()
-    if not magnetEnabled then return end
-    
-    local myChar = LocalPlayer.Character
-    if not myChar then return end
-    
-    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp then return end
-    
-    local myPos = myHrp.Position
-    local myCF = myHrp.CFrame
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local char = player.Character
-            if char then
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local dist = (myPos - hrp.Position).Magnitude
-                    if dist <= MAGNET_RADIUS then
-                        local targetPos = myPos + (myCF.LookVector * 4)
-                        local direction = (targetPos - hrp.Position).unit
-                        hrp.AssemblyLinearVelocity = direction * 120
-                    end
-                end
-            end
-        end
-    end
-end
-
+-- ESP Drawing (sama kaya sebelumnya)
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -554,14 +547,16 @@ end)
 
 Players.PlayerRemoving:Connect(function(p)
     pcall(function() removeHologram(p) end)
+    resetOriginalPosition(p)
 end)
 
 RunService.RenderStepped:Connect(function()
     pcall(updateESP)
-    pcall(magnetInstant)
+    pcall(magnetClientSide)
     pcall(autoAttack)
 end)
 
+-- GUI KEY (disingkat karena panjang, sama kaya sebelumnya)
 local KeyGui = Instance.new("ScreenGui")
 KeyGui.Name = "DripClientKey"
 KeyGui.Parent = game.CoreGui
@@ -796,19 +791,21 @@ VerifyBtn.MouseButton1Click:Connect(function()
         task.wait(2)
         notif:Destroy()
         
+        -- Menu Utama (disingkat, intinya sama)
         local MenuGui = Instance.new("ScreenGui")
         MenuGui.Name = "DripClient"
         MenuGui.Parent = game.CoreGui
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 380, 0, 560)
-        MainFrame.Position = UDim2.new(0.5, -190, 0.5, -280)
+        MainFrame.Size = UDim2.new(0, 380, 0, 500)
+        MainFrame.Position = UDim2.new(0.5, -190, 0.5, -250)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
         MainFrame.Active = true
         MainFrame.Draggable = true
+        MainFrame.Visible = true
         
         local MainCorner = Instance.new("UICorner")
         MainCorner.Parent = MainFrame
@@ -838,7 +835,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Parent = Header
         Title.Size = UDim2.new(1, 0, 1, 0)
         Title.BackgroundTransparency = 1
-        Title.Text = "DRIP CLIENT V2.4"
+        Title.Text = "DRIP CLIENT V2.5"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 20
@@ -855,9 +852,10 @@ VerifyBtn.MouseButton1Click:Connect(function()
         minimizeBtn.MouseButton1Click:Connect(function()
             minimized = not minimized
             MainFrame.Visible = not minimized
-            if minimized then                MainFrame.Size = UDim2.new(0, 380, 0, 50)
+            if minimized then
+                MainFrame.Size = UDim2.new(0, 380, 0, 50)
             else
-                MainFrame.Size = UDim2.new(0, 380, 0, 560)
+                MainFrame.Size = UDim2.new(0, 380, 0, 500)
             end
         end)
         
@@ -916,7 +914,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentMain = Instance.new("ScrollingFrame")
         contentMain.Parent = MainFrame
-        contentMain.Size = UDim2.new(0.94, 0, 0.75, 0)
+        contentMain.Size = UDim2.new(0.94, 0, 0.73, 0)
         contentMain.Position = UDim2.new(0.03, 0, 0.18, 0)
         contentMain.BackgroundColor3 = gray
         contentMain.BackgroundTransparency = 0.4
@@ -935,7 +933,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentESP = Instance.new("ScrollingFrame")
         contentESP.Parent = MainFrame
-        contentESP.Size = UDim2.new(0.94, 0, 0.75, 0)
+        contentESP.Size = UDim2.new(0.94, 0, 0.73, 0)
         contentESP.Position = UDim2.new(0.03, 0, 0.18, 0)
         contentESP.BackgroundColor3 = gray
         contentESP.BackgroundTransparency = 0.4
@@ -955,7 +953,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local contentCombat = Instance.new("ScrollingFrame")
         contentCombat.Parent = MainFrame
-        contentCombat.Size = UDim2.new(0.94, 0, 0.75, 0)
+        contentCombat.Size = UDim2.new(0.94, 0, 0.73, 0)
         contentCombat.Position = UDim2.new(0.03, 0, 0.18, 0)
         contentCombat.BackgroundColor3 = gray
         contentCombat.BackgroundTransparency = 0.4
@@ -1094,18 +1092,18 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then pcall(applyHologramToAll) else pcall(removeHologramFromAll) end
         end, false)
         
-        createToggle(contentCombat, "MAGNET INSTANT", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
+        createToggle(contentCombat, "MAGNET (Client-Side)", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
         createToggle(contentCombat, "AUTO ATTACK", Color3.fromRGB(255, 100, 0), function(s) autoAttackEnabled = s end, false)
         
         local combatInfo = Instance.new("TextLabel")
         combatInfo.Parent = contentCombat
-        combatInfo.Size = UDim2.new(0.95, 0, 0, 70)
+        combatInfo.Size = UDim2.new(0.95, 0, 0, 90)
         combatInfo.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
         combatInfo.BackgroundTransparency = 0.2
-        combatInfo.Text = "MAGNET: Tarik musuh ke arahmu\nAUTO ATTACK: Ayun otomatis musuh dalam radius\nAktifkan keduanya untuk hasil brutal"
+        combatInfo.Text = "MAGNET CLIENT-SIDE: Musuh cuma bergerak di layar lo. Di layar mereka jalan normal.\nAUTO ATTACK: Ayun otomatis ke musuh terdekat.\nAktifkan keduanya buat hasil brutal."
         combatInfo.TextColor3 = Color3.fromRGB(255, 200, 100)
         combatInfo.Font = Enum.Font.GothamBold
-        combatInfo.TextSize = 11
+        combatInfo.TextSize = 10
         combatInfo.TextWrapped = true
         combatInfo.TextYAlignment = Enum.TextYAlignment.Center
         local combatInfoCorner = Instance.new("UICorner")
@@ -1157,7 +1155,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         RunService.RenderStepped:Connect(updateEnemyCounter)
         
-        print("DRIP CLIENT V2.4 ACTIVATED - Magnet + Auto Attack Ready")
+        print("DRIP CLIENT V2.5 ACTIVATED")
         
     else
         StatusLabel.Text = message
