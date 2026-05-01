@@ -1,7 +1,6 @@
--- ================== DRIP CLIENT V2.2 (FIX MENU + MAGNET) ==================
--- Fix: menu muncul 100%, gak pake Drawing biar gak error
--- Fitur: ESP Box, ESP Line, Hologram, Noclip, God Mode, Speed, Infinity Jump, Crosshair
--- Magnet: Semua musuh tertarik ke player (radius 50)
+-- ================== DRIP CLIENT V2.3 (MAGNET INSTANT + FIX) ==================
+-- Fix: semua menu muncul
+-- Magnet Instant: musuh langsung teleport ke depan player (bukan ditarik pelan)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -23,8 +22,8 @@ local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebase
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
 local MAX_DIST = 115
-local MAGNET_RADIUS = 50
-local MAGNET_FORCE = 0.3
+local MAGNET_RADIUS = 80  -- radius tarik musuh
+local TELEPORT_OFFSET = 3 -- jarak musuh teleport ke depan player
 
 -- Variabel
 local keyValid = false
@@ -125,8 +124,8 @@ local function cekKey(key)
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== MAGNET (Tarik Musuh) ==================
-local function magnetPull()
+-- ================== MAGNET INSTANT (Teleport Musuh ke Player) ==================
+local function magnetInstant()
     if not magnetEnabled then return end
     
     local myChar = LocalPlayer.Character
@@ -136,6 +135,7 @@ local function magnetPull()
     if not myHrp then return end
     
     local myPos = myHrp.Position
+    local myCF = myHrp.CFrame
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
@@ -144,9 +144,10 @@ local function magnetPull()
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if hrp then
                     local dist = (myPos - hrp.Position).Magnitude
-                    if dist <= MAGNET_RADIUS and dist > 2 then
-                        local direction = (myPos - hrp.Position).unit
-                        hrp.CFrame = hrp.CFrame + direction * MAGNET_FORCE
+                    if dist <= MAGNET_RADIUS then
+                        -- Teleport musuh ke depan player (bukan di dalam player)
+                        local targetPos = myPos + (myCF.LookVector * TELEPORT_OFFSET)
+                        hrp.CFrame = CFrame.new(targetPos)
                     end
                 end
             end
@@ -419,6 +420,7 @@ local function createCrosshair()
     outer.BorderSizePixel = 2
     outer.BorderColor3 = Color3.fromRGB(255, 255, 255)
     local outerCorner = Instance.new("UICorner")
+    outerCorner.Parent = outer
     outerCorner.CornerRadius = UDim.new(1, 0)
     local dot = Instance.new("Frame")
     dot.Parent = gui
@@ -461,7 +463,7 @@ end)
 
 RunService.RenderStepped:Connect(function()
     pcall(updateESP)
-    pcall(magnetPull)
+    pcall(magnetInstant)
 end)
 
 -- ================== GUI KEY ==================
@@ -735,7 +737,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Parent = Header
         Title.Size = UDim2.new(1, 0, 1, 0)
         Title.BackgroundTransparency = 1
-        Title.Text = "DRIP CLIENT V2.2"
+        Title.Text = "DRIP CLIENT V2.3"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 20
@@ -996,16 +998,16 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then pcall(applyHologramToAll) else pcall(removeHologramFromAll) end
         end, false)
         
-        -- MAGNET tab
-        createToggle(contentMagnet, "🧲 MAGNET PLAYER (Tarik Musuh)", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
+        -- MAGNET tab (INSTANT TELEPORT)
+        createToggle(contentMagnet, "⚡ MAGNET INSTANT (Teleport Musuh)", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
         
         local magnetInfo = Instance.new("TextLabel")
         magnetInfo.Parent = contentMagnet
-        magnetInfo.Size = UDim2.new(0.95, 0, 0, 70)
+        magnetInfo.Size = UDim2.new(0.95, 0, 0, 80)
         magnetInfo.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
         magnetInfo.BackgroundTransparency = 0.2
-        magnetInfo.Text = "⚠️ MAGNET MODE ⚠️\n\nSemua musuh dalam radius 50 stud akan tertarik ke arahmu!"
-        magnetInfo.TextColor3 = Color3.fromRGB(255, 200, 100)
+        magnetInfo.Text = "⚡ MAGNET INSTANT ⚡\n\nMusuh dalam radius 80 stud akan LANGSUNG TELEPORT ke depanmu!\nGas bunuh mereka 🔥"
+        magnetInfo.TextColor3 = Color3.fromRGB(255, 100, 100)
         magnetInfo.Font = Enum.Font.GothamBold
         magnetInfo.TextSize = 11
         magnetInfo.TextWrapped = true
@@ -1058,7 +1060,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             MainFrame.Visible = menuVisible
         end)
         
-        print("✅ DRIP CLIENT BERHASIL DIACTIVATE!")
+        print("✅ DRIP CLIENT ACTIVATED! Magnet Instant Ready!")
         
     else
         StatusLabel.Text = "❌ " .. message
