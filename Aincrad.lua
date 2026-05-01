@@ -1,6 +1,9 @@
--- ================== DRIP CLIENT V2.3 (MAGNET INSTANT + FIX) ==================
--- Fix: semua menu muncul
--- Magnet Instant: musuh langsung teleport ke depan player (bukan ditarik pelan)
+-- ================== DRIP CLIENT V2.4 (MAGNET INSTANT + AUTO ATTACK + ENEMY DETECTION) ==================
+-- Fix: Tidak ada emoji
+-- Fitur: ESP Line, ESP Box, Hologram, Noclip, God Mode, Speed 70, Infinity Jump, Crosshair
+-- Magnet Instant: Teleport musuh ke depan player (server-side velocity)
+-- Auto Attack: Ayun otomatis ke musuh yang ketarik
+-- Enemy Detection: Deteksi musuh berdasarkan arah hadap kamera
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,8 +12,8 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+local VirtualUser = game:GetService("VirtualUser")
 
--- Warna menu
 local ungu = Color3.fromRGB(128, 0, 255)
 local dark = Color3.fromRGB(8, 8, 12)
 local gray = Color3.fromRGB(25, 25, 35)
@@ -21,24 +24,22 @@ local merah = Color3.fromRGB(255, 80, 80)
 local DB_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEB_URL = "https://putzzdevxit.github.io/KEY-GENERATOR-/"
 
-local MAX_DIST = 115
-local MAGNET_RADIUS = 80  -- radius tarik musuh
-local TELEPORT_OFFSET = 3 -- jarak musuh teleport ke depan player
+local MAX_DIST = 200
+local MAGNET_RADIUS = 80
+local ATTACK_RADIUS = 12
 
--- Variabel
 local keyValid = false
 local keyExpiryTime = 0
 local keyType = ""
 
--- ESP vars
 local espLineEnabled = false
 local espBoxEnabled = false
 local hologramEnabled = false
 local magnetEnabled = false
+local autoAttackEnabled = false
 
 local hologramHighlights = {}
 
--- Player vars
 local noclipEnabled = false
 local noclipConn = nil
 local godModeEnabled = false
@@ -51,19 +52,27 @@ local infJumpConn = nil
 local crosshairEnabled = false
 local crosshairObject = nil
 
--- ================== CEK KEY ==================
+local espLines = {}
+local espBoxes = {}
+local espNames = {}
+local espHealthBars = {}
+local enemyCounterText = nil
+
+local lastAttackTime = 0
+local ATTACK_COOLDOWN = 0.3
+
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
     end)
     if not success or not data then
-        return false, "Gagal koneksi ke database!"
+        return false, "Gagal koneksi ke database"
     end
     local success2, jsonData = pcall(function()
         return HttpService:JSONDecode(data)
     end)
     if not success2 or not jsonData then
-        return false, "Gagal membaca database!"
+        return false, "Gagal membaca database"
     end
     
     local foundKeyData = nil
@@ -76,7 +85,7 @@ local function cekKey(key)
         end
     end
     if not foundKeyData then
-        return false, "KEY TIDAK TERDAFTAR!"
+        return false, "KEY TIDAK TERDAFTAR"
     end
     
     local jenis = foundKeyData.jenis or "PERMANEN"
@@ -115,16 +124,100 @@ local function cekKey(key)
     if expiryDays >= 999999 then expiryTime = math.huge end
     
     if currentTime > expiryTime and expiryTime ~= math.huge then
-        return false, "KEY SUDAH EXPIRED!"
+        return false, "KEY SUDAH EXPIRED"
     end
     
     keyValid = true
     keyExpiryTime = expiryTime
     keyType = jenis
-    return true, "KEY VALID! (" .. jenis .. ")"
+    return true, "KEY VALID (" .. jenis .. ")"
 end
 
--- ================== MAGNET INSTANT (Teleport Musuh ke Player) ==================
+local function getEnemiesInFront()
+    local enemies = {}
+    local myChar = LocalPlayer.Character
+    if not myChar then return enemies end
+    
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return enemies end
+    
+    local cameraCF = Camera.CFrame
+    local cameraPos = cameraCF.Position
+    local cameraForward = cameraCF.LookVector
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dirToEnemy = (hrp.Position - cameraPos).unit
+                    local dot = cameraForward:Dot(dirToEnemy)
+                    if dot > 0.3 then
+                        table.insert(enemies, char)
+                    end
+                end
+            end
+        end
+    end
+    return enemies
+end
+
+local function getClosestEnemy()
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return nil end
+    
+    local closest = nil
+    local closestDist = math.huge
+    local myPos = myHrp.Position
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (myPos - hrp.Position).Magnitude
+                    if dist < closestDist and dist <= ATTACK_RADIUS then
+                        closestDist = dist
+                        closest = char
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function autoAttack()
+    if not autoAttackEnabled then return end
+    
+    local now = tick()
+    if now - lastAttackTime < ATTACK_COOLDOWN then return end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local targetChar = getClosestEnemy()
+    if not targetChar then return end
+    
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp or not targetHrp then return end
+    
+    local dist = (myHrp.Position - targetHrp.Position).Magnitude
+    if dist <= ATTACK_RADIUS then
+        local cameraCF = Camera.CFrame
+        local direction = (targetHrp.Position - cameraCF.Position).unit
+        Camera.CFrame = CFrame.new(cameraCF.Position, cameraCF.Position + direction)
+        
+        VirtualUser:ClickButton1(Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2))
+        lastAttackTime = now
+    end
+end
+
 local function magnetInstant()
     if not magnetEnabled then return end
     
@@ -145,21 +238,15 @@ local function magnetInstant()
                 if hrp then
                     local dist = (myPos - hrp.Position).Magnitude
                     if dist <= MAGNET_RADIUS then
-                        -- Teleport musuh ke depan player (bukan di dalam player)
-                        local targetPos = myPos + (myCF.LookVector * TELEPORT_OFFSET)
-                        hrp.CFrame = CFrame.new(targetPos)
+                        local targetPos = myPos + (myCF.LookVector * 4)
+                        local direction = (targetPos - hrp.Position).unit
+                        hrp.AssemblyLinearVelocity = direction * 120
                     end
                 end
             end
         end
     end
 end
-
--- ================== ESP (Drawing) ==================
-local espLines = {}
-local espBoxes = {}
-local espNames = {}
-local espHealthBars = {}
 
 local function createLine(player)
     if player == LocalPlayer then return end
@@ -211,7 +298,6 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -230,7 +316,6 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -255,7 +340,6 @@ local function updateESP()
         end
     end
     
-    -- NAMA PLAYER
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -277,7 +361,6 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -318,7 +401,21 @@ local function initESP()
     end
 end
 
--- ================== HOLOGRAM ==================
+local function updateEnemyCounter()
+    if not enemyCounterText then return end
+    local count = 0
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                count = count + 1
+            end
+        end
+    end
+    enemyCounterText.Text = "ENEMY: " .. count
+    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
+end
+
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -358,7 +455,6 @@ local function removeHologramFromAll()
     end
 end
 
--- ================== UTILITY ==================
 local function updateNoclip()
     if noclipConn then noclipConn:Disconnect() end
     noclipConn = RunService.Stepped:Connect(function()
@@ -438,7 +534,6 @@ local function removeCrosshair()
     if crosshairObject then pcall(function() crosshairObject:Destroy() end) end
 end
 
--- ================== EVENT ==================
 Players.PlayerAdded:Connect(function(p)
     task.wait(0.5)
     pcall(function()
@@ -464,9 +559,9 @@ end)
 RunService.RenderStepped:Connect(function()
     pcall(updateESP)
     pcall(magnetInstant)
+    pcall(autoAttack)
 end)
 
--- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
 KeyGui.Name = "DripClientKey"
 KeyGui.Parent = game.CoreGui
@@ -500,7 +595,7 @@ KeyIcon.Parent = KeyFrame
 KeyIcon.Size = UDim2.new(1, 0, 0, 70)
 KeyIcon.Position = UDim2.new(0, 0, 0, 15)
 KeyIcon.BackgroundTransparency = 1
-KeyIcon.Text = "🔐"
+KeyIcon.Text = "D"
 KeyIcon.TextColor3 = ungu
 KeyIcon.Font = Enum.Font.GothamBlack
 KeyIcon.TextSize = 45
@@ -584,7 +679,7 @@ GetKeyBtn.Size = UDim2.new(0.5, 0, 0, 35)
 GetKeyBtn.Position = UDim2.new(0.25, 0, 0.86, 0)
 GetKeyBtn.BackgroundColor3 = Color3.fromRGB(255, 165, 0)
 GetKeyBtn.BackgroundTransparency = 0.2
-GetKeyBtn.Text = "🌐 GET KEY"
+GetKeyBtn.Text = "GET KEY"
 GetKeyBtn.TextColor3 = Color3.new(1, 1, 1)
 GetKeyBtn.Font = Enum.Font.GothamBold
 GetKeyBtn.TextSize = 14
@@ -597,7 +692,7 @@ StatusLabel.Parent = KeyFrame
 StatusLabel.Size = UDim2.new(0.9, 0, 0, 30)
 StatusLabel.Position = UDim2.new(0.05, 0, 0.93, 0)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "🔑 Masukkan key"
+StatusLabel.Text = "Masukkan key"
 StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextSize = 11
@@ -631,10 +726,10 @@ GetKeyBtn.MouseButton1Click:Connect(function()
     pcall(function()
         if setclipboard then
             setclipboard(WEB_URL)
-            StatusLabel.Text = "✅ Link disalin!"
+            StatusLabel.Text = "Link disalin"
             StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
             task.wait(2)
-            StatusLabel.Text = "🔑 Masukkan key"
+            StatusLabel.Text = "Masukkan key"
             StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         end
     end)
@@ -643,35 +738,42 @@ end)
 VerifyBtn.MouseButton1Click:Connect(function()
     local key = KeyTextBox.Text:gsub("%s+", "")
     if key == "" then
-        StatusLabel.Text = "❌ Masukkan key!"
+        StatusLabel.Text = "Masukkan key"
         StatusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
     showLoading(true)
-    StatusLabel.Text = "⏳ Verifikasi..."
+    StatusLabel.Text = "Verifikasi..."
     StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-    VerifyBtn.Text = "⏳ VERIFIKASI..."
+    VerifyBtn.Text = "VERIFIKASI"
     local valid, message = cekKey(key)
     showLoading(false)
     VerifyBtn.Text = "VERIFIKASI KEY"
     
     if valid then
-        StatusLabel.Text = "✅ " .. message
+        StatusLabel.Text = message
         StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
         TweenService:Create(KeyFrame, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 100, 0)}):Play()
         task.wait(0.3)
         
         for i = 3, 1, -1 do
-            StatusLabel.Text = "Loading " .. i .. "..."
+            StatusLabel.Text = "Loading " .. i
             task.wait(1)
         end
         
         KeyGui:Destroy()
-        
-        -- Inisialisasi ESP
         pcall(initESP)
         
-        -- Notifikasi sukses
+        enemyCounterText = Drawing.new("Text")
+        enemyCounterText.Size = 20
+        enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
+        enemyCounterText.Center = true
+        enemyCounterText.Outline = true
+        enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
+        enemyCounterText.Visible = true
+        enemyCounterText.Text = "ENEMY: 0"
+        updateEnemyCounter()
+        
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
         local nf = Instance.new("Frame")
@@ -687,22 +789,21 @@ VerifyBtn.MouseButton1Click:Connect(function()
         nt.Parent = nf
         nt.Size = UDim2.new(1, 0, 1, 0)
         nt.BackgroundTransparency = 1
-        nt.Text = "✅ DRIP CLIENT ACTIVATED!"
+        nt.Text = "DRIP CLIENT ACTIVATED"
         nt.TextColor3 = Color3.fromRGB(255, 255, 255)
         nt.Font = Enum.Font.GothamBold
         nt.TextSize = 16
         task.wait(2)
         notif:Destroy()
         
-        -- ================== MENU UTAMA ==================
         local MenuGui = Instance.new("ScreenGui")
         MenuGui.Name = "DripClient"
         MenuGui.Parent = game.CoreGui
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 380, 0, 540)
-        MainFrame.Position = UDim2.new(0.5, -190, 0.5, -270)
+        MainFrame.Size = UDim2.new(0, 380, 0, 560)
+        MainFrame.Position = UDim2.new(0.5, -190, 0.5, -280)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -737,7 +838,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Parent = Header
         Title.Size = UDim2.new(1, 0, 1, 0)
         Title.BackgroundTransparency = 1
-        Title.Text = "DRIP CLIENT V2.3"
+        Title.Text = "DRIP CLIENT V2.4"
         Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 20
@@ -754,14 +855,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
         minimizeBtn.MouseButton1Click:Connect(function()
             minimized = not minimized
             MainFrame.Visible = not minimized
-            if minimized then
-                MainFrame.Size = UDim2.new(0, 380, 0, 50)
+            if minimized then                MainFrame.Size = UDim2.new(0, 380, 0, 50)
             else
-                MainFrame.Size = UDim2.new(0, 380, 0, 540)
+                MainFrame.Size = UDim2.new(0, 380, 0, 560)
             end
         end)
         
-        -- Tab Bar
         local TabBar = Instance.new("Frame")
         TabBar.Parent = MainFrame
         TabBar.Size = UDim2.new(0.96, 0, 0, 35)
@@ -801,21 +900,20 @@ VerifyBtn.MouseButton1Click:Connect(function()
         tabESPCorner.Parent = tabESP
         tabESPCorner.CornerRadius = UDim.new(0, 8)
         
-        local tabMagnet = Instance.new("TextButton")
-        tabMagnet.Parent = TabBar
-        tabMagnet.Size = UDim2.new(0.34, -2, 1, -2)
-        tabMagnet.Position = UDim2.new(0.66, 2, 0, 1)
-        tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        tabMagnet.BackgroundTransparency = 0.5
-        tabMagnet.Text = "🧲 MAGNET"
-        tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
-        tabMagnet.Font = Enum.Font.GothamBold
-        tabMagnet.TextSize = 12
-        local tabMagnetCorner = Instance.new("UICorner")
-        tabMagnetCorner.Parent = tabMagnet
-        tabMagnetCorner.CornerRadius = UDim.new(0, 8)
+        local tabCombat = Instance.new("TextButton")
+        tabCombat.Parent = TabBar
+        tabCombat.Size = UDim2.new(0.34, -2, 1, -2)
+        tabCombat.Position = UDim2.new(0.66, 2, 0, 1)
+        tabCombat.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        tabCombat.BackgroundTransparency = 0.5
+        tabCombat.Text = "COMBAT"
+        tabCombat.TextColor3 = Color3.fromRGB(200, 200, 200)
+        tabCombat.Font = Enum.Font.GothamBold
+        tabCombat.TextSize = 12
+        local tabCombatCorner = Instance.new("UICorner")
+        tabCombatCorner.Parent = tabCombat
+        tabCombatCorner.CornerRadius = UDim.new(0, 8)
         
-        -- Content panels
         local contentMain = Instance.new("ScrollingFrame")
         contentMain.Parent = MainFrame
         contentMain.Size = UDim2.new(0.94, 0, 0.75, 0)
@@ -855,27 +953,26 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 8)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
-        local contentMagnet = Instance.new("ScrollingFrame")
-        contentMagnet.Parent = MainFrame
-        contentMagnet.Size = UDim2.new(0.94, 0, 0.75, 0)
-        contentMagnet.Position = UDim2.new(0.03, 0, 0.18, 0)
-        contentMagnet.BackgroundColor3 = gray
-        contentMagnet.BackgroundTransparency = 0.4
-        contentMagnet.BorderSizePixel = 0
-        contentMagnet.ScrollBarThickness = 5
-        contentMagnet.ScrollBarImageColor3 = ungu
-        contentMagnet.CanvasSize = UDim2.new(0, 0, 0, 0)
-        contentMagnet.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        contentMagnet.Visible = false
-        local contentMagnetCorner = Instance.new("UICorner")
-        contentMagnetCorner.Parent = contentMagnet
-        contentMagnetCorner.CornerRadius = UDim.new(0, 12)
-        local layoutMagnet = Instance.new("UIListLayout")
-        layoutMagnet.Parent = contentMagnet
-        layoutMagnet.Padding = UDim.new(0, 8)
-        layoutMagnet.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        local contentCombat = Instance.new("ScrollingFrame")
+        contentCombat.Parent = MainFrame
+        contentCombat.Size = UDim2.new(0.94, 0, 0.75, 0)
+        contentCombat.Position = UDim2.new(0.03, 0, 0.18, 0)
+        contentCombat.BackgroundColor3 = gray
+        contentCombat.BackgroundTransparency = 0.4
+        contentCombat.BorderSizePixel = 0
+        contentCombat.ScrollBarThickness = 5
+        contentCombat.ScrollBarImageColor3 = ungu
+        contentCombat.CanvasSize = UDim2.new(0, 0, 0, 0)
+        contentCombat.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        contentCombat.Visible = false
+        local contentCombatCorner = Instance.new("UICorner")
+        contentCombatCorner.Parent = contentCombat
+        contentCombatCorner.CornerRadius = UDim.new(0, 12)
+        local layoutCombat = Instance.new("UIListLayout")
+        layoutCombat.Parent = contentCombat
+        layoutCombat.Padding = UDim.new(0, 8)
+        layoutCombat.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
-        -- Tab switching
         tabMain.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = ungu
             tabMain.BackgroundTransparency = 0.3
@@ -883,13 +980,14 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabMagnet.BackgroundTransparency = 0.5
-            tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabCombat.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabCombat.BackgroundTransparency = 0.5
+            tabCombat.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = true
             contentESP.Visible = false
-            contentMagnet.Visible = false
+            contentCombat.Visible = false
         end)
+        
         tabESP.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = ungu
             tabESP.BackgroundTransparency = 0.3
@@ -897,17 +995,18 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabMagnet.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabMagnet.BackgroundTransparency = 0.5
-            tabMagnet.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabCombat.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabCombat.BackgroundTransparency = 0.5
+            tabCombat.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = true
-            contentMagnet.Visible = false
+            contentCombat.Visible = false
         end)
-        tabMagnet.MouseButton1Click:Connect(function()
-            tabMagnet.BackgroundColor3 = ungu
-            tabMagnet.BackgroundTransparency = 0.3
-            tabMagnet.TextColor3 = Color3.fromRGB(255, 255, 255)
+        
+        tabCombat.MouseButton1Click:Connect(function()
+            tabCombat.BackgroundColor3 = ungu
+            tabCombat.BackgroundTransparency = 0.3
+            tabCombat.TextColor3 = Color3.fromRGB(255, 255, 255)
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -916,10 +1015,9 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = false
-            contentMagnet.Visible = true
+            contentCombat.Visible = true
         end)
         
-        -- Toggle function
         local function createToggle(parent, text, defaultColor, callback, defaultState)
             local frame = Instance.new("Frame")
             frame.Parent = parent
@@ -976,16 +1074,14 @@ VerifyBtn.MouseButton1Click:Connect(function()
             end)
         end
         
-        -- MAIN tab
         createToggle(contentMain, "NOCLIP", ungu, function(s) noclipEnabled = s; if s then updateNoclip() end end, false)
         createToggle(contentMain, "GOD MODE", ungu, function(s) godModeEnabled = s; if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end end, false)
         createToggle(contentMain, "SPEED 70", ungu, function(s) speedEnabled = s; setSpeed(s) end, false)
         createToggle(contentMain, "INFINITY JUMP", ungu, function(s) infJumpEnabled = s; if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end end, false)
         createToggle(contentMain, "CROSSHAIR", ungu, function(s) crosshairEnabled = s; if s then createCrosshair() else removeCrosshair() end end, false)
         
-        -- ESP tab
         createToggle(contentESP, "ESP LINE", putih, function(s) espLineEnabled = s; if not s then for _, v in pairs(espLines) do v[1].Visible = false end end end, false)
-        createToggle(contentESP, "ESP BOX + NAME + HEALTH", hijau, function(s) 
+        createToggle(contentESP, "ESP BOX + HEALTH", hijau, function(s) 
             espBoxEnabled = s
             if not s then
                 for _, v in pairs(espBoxes) do v[1].Visible = false end
@@ -998,25 +1094,24 @@ VerifyBtn.MouseButton1Click:Connect(function()
             if s then pcall(applyHologramToAll) else pcall(removeHologramFromAll) end
         end, false)
         
-        -- MAGNET tab (INSTANT TELEPORT)
-        createToggle(contentMagnet, "⚡ MAGNET INSTANT (Teleport Musuh)", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
+        createToggle(contentCombat, "MAGNET INSTANT", Color3.fromRGB(255, 0, 0), function(s) magnetEnabled = s end, false)
+        createToggle(contentCombat, "AUTO ATTACK", Color3.fromRGB(255, 100, 0), function(s) autoAttackEnabled = s end, false)
         
-        local magnetInfo = Instance.new("TextLabel")
-        magnetInfo.Parent = contentMagnet
-        magnetInfo.Size = UDim2.new(0.95, 0, 0, 80)
-        magnetInfo.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-        magnetInfo.BackgroundTransparency = 0.2
-        magnetInfo.Text = "⚡ MAGNET INSTANT ⚡\n\nMusuh dalam radius 80 stud akan LANGSUNG TELEPORT ke depanmu!\nGas bunuh mereka 🔥"
-        magnetInfo.TextColor3 = Color3.fromRGB(255, 100, 100)
-        magnetInfo.Font = Enum.Font.GothamBold
-        magnetInfo.TextSize = 11
-        magnetInfo.TextWrapped = true
-        magnetInfo.TextYAlignment = Enum.TextYAlignment.Center
-        local magnetInfoCorner = Instance.new("UICorner")
-        magnetInfoCorner.Parent = magnetInfo
-        magnetInfoCorner.CornerRadius = UDim.new(0, 10)
+        local combatInfo = Instance.new("TextLabel")
+        combatInfo.Parent = contentCombat
+        combatInfo.Size = UDim2.new(0.95, 0, 0, 70)
+        combatInfo.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        combatInfo.BackgroundTransparency = 0.2
+        combatInfo.Text = "MAGNET: Tarik musuh ke arahmu\nAUTO ATTACK: Ayun otomatis musuh dalam radius\nAktifkan keduanya untuk hasil brutal"
+        combatInfo.TextColor3 = Color3.fromRGB(255, 200, 100)
+        combatInfo.Font = Enum.Font.GothamBold
+        combatInfo.TextSize = 11
+        combatInfo.TextWrapped = true
+        combatInfo.TextYAlignment = Enum.TextYAlignment.Center
+        local combatInfoCorner = Instance.new("UICorner")
+        combatInfoCorner.Parent = combatInfo
+        combatInfoCorner.CornerRadius = UDim.new(0, 10)
         
-        -- Floating button
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 45, 0, 45)
@@ -1060,10 +1155,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
             MainFrame.Visible = menuVisible
         end)
         
-        print("✅ DRIP CLIENT ACTIVATED! Magnet Instant Ready!")
+        RunService.RenderStepped:Connect(updateEnemyCounter)
+        
+        print("DRIP CLIENT V2.4 ACTIVATED - Magnet + Auto Attack Ready")
         
     else
-        StatusLabel.Text = "❌ " .. message
+        StatusLabel.Text = message
         StatusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         for i = 1, 3 do
             TweenService:Create(KeyFrame, TweenInfo.new(0.05), {BackgroundColor3 = Color3.fromRGB(100, 0, 0)}):Play()
@@ -1072,7 +1169,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
             task.wait(0.05)
         end
         task.wait(1.5)
-        StatusLabel.Text = "🔑 Masukkan key"
+        StatusLabel.Text = "Masukkan key"
         StatusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
         KeyTextBox.Text = ""
     end
