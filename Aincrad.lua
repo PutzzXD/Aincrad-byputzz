@@ -1,9 +1,8 @@
--- ================== DRIP CLIENT V1.4 (FINAL + PLAYER CONTROL) ==================
--- Fitur: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
--- hologram (merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- Crosshair, Enemy counter, Timer sisa waktu key.
--- TAMBAHAN: Tab PLAYER -> teleport ke player lain, kill player (reset).
--- Tidak ada fitur auto attack.
+-- ================== DRIP CLIENT V1.3 (FINAL) ==================
+-- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
+-- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
+-- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
+-- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -63,7 +62,7 @@ local crosshairObject = nil
 -- Enemy counter
 local enemyCounterText = nil
 
--- ================== FUNGSI CEK KEY ==================
+-- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -78,6 +77,7 @@ local function cekKey(key)
         return false, "Gagal membaca database!"
     end
     
+    -- Cari key di database
     local foundKeyData = nil
     local keyId = nil
     for id, keyData in pairs(jsonData) do
@@ -91,6 +91,7 @@ local function cekKey(key)
         return false, "KEY TIDAK TERDAFTAR!"
     end
     
+    -- Tentukan masa berlaku (dalam hari) berdasarkan jenis
     local jenis = foundKeyData.jenis or "PERMANEN"
     local expiryDays = 0
     if jenis == "1 JAM" then
@@ -103,42 +104,76 @@ local function cekKey(key)
         expiryDays = 1
     end
     
+    -- Ambil firstUsed dari database, jika tidak ada maka key baru
     local firstUsed = foundKeyData.firstUsed
     local currentTime = os.time()
     
     if not firstUsed then
+        -- Key baru: simpan firstUsed dan expiryDays ke Firebase menggunakan PATCH
         firstUsed = currentTime
         local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
-        local updateData = { firstUsed = firstUsed, expiryDays = expiryDays }
+        local updateData = {
+            firstUsed = firstUsed,
+            expiryDays = expiryDays
+        }
         local body = HttpService:JSONEncode(updateData)
-        pcall(function()
-            if syn and syn.request then
-                syn.request({Url = updateUrl, Method = "PATCH", Headers = {["Content-Type"] = "application/json"}, Body = body})
-            elseif http and http.request then
-                http.request({Url = updateUrl, Method = "PATCH", Headers = {["Content-Type"] = "application/json"}, Body = body})
-            end
-        end)
+        -- Gunakan RequestAsync (atau fallback untuk executor yang tidak support)
+        local requestSuccess = false
+        if syn and syn.request then
+            local response = syn.request({
+                Url = updateUrl,
+                Method = "PATCH",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+            requestSuccess = (response and response.Success)
+        elseif http and http.request then
+            local response = http.request({
+                Url = updateUrl,
+                Method = "PATCH",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = body
+            })
+            requestSuccess = (response and response.Success)
+        else
+            -- Fallback: pcall dengan HttpService (mungkin tidak berfungsi di semua executor)
+            pcall(function()
+                HttpService:RequestAsync({
+                    Url = updateUrl,
+                    Method = "PATCH",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = body
+                })
+            end)
+        end
     end
     
+    -- Hitung expiry time
     local expiryTime = firstUsed + (expiryDays * 86400)
-    if expiryDays >= 999999 then expiryTime = math.huge end
+    if expiryDays >= 999999 then
+        expiryTime = math.huge
+    end
     
     if currentTime > expiryTime and expiryTime ~= math.huge then
         return false, "KEY SUDAH EXPIRED!"
     end
     
+    -- Simpan info ke variabel global
     keyValid = true
     keyExpiryTime = expiryTime
     keyType = jenis
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== HOLOGRAM ==================
+-- ================== HOLOGRAM (Highlight) ==================
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
-    if not char then return
-    if hologramHighlights[player] then hologramHighlights[player]:Destroy() end
+    if not char then return end
+    if hologramHighlights[player] then
+        hologramHighlights[player]:Destroy()
+        hologramHighlights[player] = nil
+    end
     local hl = Instance.new("Highlight")
     hl.Parent = char
     hl.FillColor = merah
@@ -159,12 +194,16 @@ end
 
 local function applyHologramToAll()
     for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then applyHologram(p) end
+        if p ~= LocalPlayer then
+            applyHologram(p)
+        end
     end
 end
 
 local function removeHologramFromAll()
-    for p, _ in pairs(hologramHighlights) do removeHologram(p) end
+    for p, _ in pairs(hologramHighlights) do
+        removeHologram(p)
+    end
 end
 
 local function onCharacterAdded(player, character)
@@ -174,7 +213,7 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP ==================
+-- ================== ESP LINE (putih, dari atas ke HEAD) ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -184,6 +223,7 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
+-- ================== ESP BOX (hijau, ketebalan 2.2) ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -215,19 +255,21 @@ local function clearESP()
     for _, v in pairs(espBoxes) do pcall(function() v[1]:Remove() end) end
     for _, v in pairs(espNames) do pcall(function() v[1]:Remove() end) end
     for _, v in pairs(espHealthBars) do pcall(function() v[1]:Remove() end) end
-    espLines = {}; espBoxes = {}; espNames = {}; espHealthBars = {}
+    espLines = {}
+    espBoxes = {}
+    espNames = {}
+    espHealthBars = {}
 end
 
 local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
-    if not myPos then return end
     
-    -- ESP LINE
+    -- ESP LINE (ke HEAD player)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
-        if char and char:FindFirstChild("Head") and espLineEnabled then
+        if char and char:FindFirstChild("Head") and myPos and espLineEnabled then
             local head = char.Head
             local pos, vis = Camera:WorldToViewportPoint(head.Position)
             if vis then
@@ -242,11 +284,11 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX
+    -- ESP BOX (dari kepala ke kaki)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
-        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and espBoxEnabled then
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and myPos and espBoxEnabled then
             local hrp = char.HumanoidRootPart
             local head = char.Head
             local pos, vis = Camera:WorldToViewportPoint(hrp.Position)
@@ -271,7 +313,7 @@ local function updateESP()
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
-        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and espBoxEnabled then
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and myPos and espBoxEnabled then
             local hrp = char.HumanoidRootPart
             local head = char.Head
             local pos, vis = Camera:WorldToViewportPoint(hrp.Position)
@@ -289,11 +331,11 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR
+    -- HEALTH BAR (vertikal di samping kanan box)
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
-        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and espBoxEnabled then
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") and myPos and espBoxEnabled then
             local hrp = char.HumanoidRootPart
             local head = char.Head
             local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -330,13 +372,34 @@ local function initESP()
     end
 end
 
+Players.PlayerAdded:Connect(function(p)
+    task.wait(0.5)
+    createLine(p)
+    createBox(p)
+    p.CharacterAdded:Connect(function(char)
+        onCharacterAdded(p, char)
+    end)
+    if hologramEnabled and p.Character then
+        task.wait(0.5)
+        applyHologram(p)
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    removeHologram(p)
+end)
+
+RunService.RenderStepped:Connect(updateESP)
+
 -- ================== NOCLIP ==================
 local function updateNoclip()
     if noclipConn then noclipConn:Disconnect() end
     noclipConn = RunService.Stepped:Connect(function()
         if noclipEnabled and LocalPlayer.Character then
             for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
             end
         end
     end)
@@ -348,15 +411,19 @@ local function updateGodMode()
     godModeConn = RunService.Heartbeat:Connect(function()
         if godModeEnabled and LocalPlayer.Character then
             local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+            if hum and hum.Health < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
         end
     end)
 end
 
--- ================== SPEED ==================
+-- ================== SPEED BOOST ==================
 local function setSpeed(enabled)
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.WalkSpeed = enabled and boostSpeed or defaultSpeed end
+    if hum then
+        hum.WalkSpeed = enabled and boostSpeed or defaultSpeed
+    end
 end
 
 -- ================== INFINITY JUMP ==================
@@ -367,7 +434,9 @@ local function updateInfJump()
             local char = LocalPlayer.Character
             if char then
                 local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
             end
         end
     end)
@@ -435,117 +504,6 @@ local function updateEnemyCounter()
     enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
 end
 
--- ================== PLAYER CONTROL (Teleport & Kill) ==================
-local function teleportToPlayer(targetPlayer)
-    local myChar = LocalPlayer.Character
-    local targetChar = targetPlayer.Character
-    if not myChar or not targetChar then return end
-    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
-    if myHRP and targetHRP then
-        myHRP.CFrame = targetHRP.CFrame + Vector3.new(0, 2, 0)
-    end
-end
-
-local function killPlayer(targetPlayer)
-    local targetChar = targetPlayer.Character
-    if targetChar then
-        local hum = targetChar:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Health = 0
-        end
-    end
-end
-
--- Update daftar player di tab Players
-local function refreshPlayerList(playerListFrame, playerListLayout)
-    -- Hapus semua child kecuali layout
-    for _, child in pairs(playerListFrame:GetChildren()) do
-        if child ~= playerListLayout then child:Destroy() end
-    end
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local row = Instance.new("Frame")
-            row.Parent = playerListFrame
-            row.Size = UDim2.new(1, -10, 0, 35)
-            row.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-            row.BackgroundTransparency = 0.2
-            row.BorderSizePixel = 0
-            local rowCorner = Instance.new("UICorner")
-            rowCorner.Parent = row
-            rowCorner.CornerRadius = UDim.new(0, 8)
-            
-            local nameLabel = Instance.new("TextLabel")
-            nameLabel.Parent = row
-            nameLabel.Size = UDim2.new(0.5, -10, 1, 0)
-            nameLabel.Position = UDim2.new(0, 5, 0, 0)
-            nameLabel.BackgroundTransparency = 1
-            nameLabel.Text = player.Name
-            nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            nameLabel.Font = Enum.Font.GothamBold
-            nameLabel.TextSize = 13
-            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-            
-            local teleportBtn = Instance.new("TextButton")
-            teleportBtn.Parent = row
-            teleportBtn.Size = UDim2.new(0.2, -5, 0.8, 0)
-            teleportBtn.Position = UDim2.new(0.5, 5, 0.1, 0)
-            teleportBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
-            teleportBtn.Text = "Teleport"
-            teleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            teleportBtn.Font = Enum.Font.GothamBold
-            teleportBtn.TextSize = 12
-            local btnCorner = Instance.new("UICorner")
-            btnCorner.Parent = teleportBtn
-            btnCorner.CornerRadius = UDim.new(0, 6)
-            teleportBtn.MouseButton1Click:Connect(function()
-                teleportToPlayer(player)
-            end)
-            
-            local killBtn = Instance.new("TextButton")
-            killBtn.Parent = row
-            killBtn.Size = UDim2.new(0.2, -5, 0.8, 0)
-            killBtn.Position = UDim2.new(0.75, 5, 0.1, 0)
-            killBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-            killBtn.Text = "Kill"
-            killBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            killBtn.Font = Enum.Font.GothamBold
-            killBtn.TextSize = 12
-            local btnCorner2 = Instance.new("UICorner")
-            btnCorner2.Parent = killBtn
-            btnCorner2.CornerRadius = UDim.new(0, 6)
-            killBtn.MouseButton1Click:Connect(function()
-                killPlayer(player)
-            end)
-        end
-    end
-end
-
--- ================== EVENT ==================
-Players.PlayerAdded:Connect(function(p)
-    task.wait(0.5)
-    createLine(p)
-    createBox(p)
-    p.CharacterAdded:Connect(function(char) onCharacterAdded(p, char) end)
-    if hologramEnabled and p.Character then
-        task.wait(0.5)
-        applyHologram(p)
-    end
-    -- Jika menu player sudah ada, refresh otomatis
-    if _G.playerListFrame and _G.playerListLayout then
-        refreshPlayerList(_G.playerListFrame, _G.playerListLayout)
-    end
-end)
-
-Players.PlayerRemoving:Connect(function(p)
-    removeHologram(p)
-    if _G.playerListFrame and _G.playerListLayout then
-        refreshPlayerList(_G.playerListFrame, _G.playerListLayout)
-    end
-end)
-
-RunService.RenderStepped:Connect(updateESP)
 RunService.RenderStepped:Connect(updateEnemyCounter)
 
 -- ================== GUI KEY ==================
@@ -778,8 +736,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 400, 0, 560)
-        MainFrame.Position = UDim2.new(0.5, -200, 0.5, -280)
+        MainFrame.Size = UDim2.new(0, 360, 0, 520)
+        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -820,7 +778,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
-        -- Tombol minimize
+        -- Tombol minimize dengan image
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -835,11 +793,21 @@ VerifyBtn.MouseButton1Click:Connect(function()
             minimized = not minimized
             MainFrame.Visible = not minimized
             if minimized then
-                MainFrame.Size = UDim2.new(0, 400, 0, 60)
+                MainFrame.Size = UDim2.new(0, 360, 0, 60)
             else
-                MainFrame.Size = UDim2.new(0, 400, 0, 560)
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
             end
         end)
+        
+        local Subtitle = Instance.new("TextLabel")
+        Subtitle.Parent = Header
+        Subtitle.Size = UDim2.new(1, 0, 0, 20)
+        Subtitle.Position = UDim2.new(0, 0, 0, 40)
+        Subtitle.BackgroundTransparency = 1
+        Subtitle.Text = ""
+        Subtitle.TextColor3 = ungu
+        Subtitle.Font = Enum.Font.Gotham
+        Subtitle.TextSize = 11
         
         -- Tab Bar
         local TabBar = Instance.new("Frame")
@@ -855,56 +823,42 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabMain = Instance.new("TextButton")
         tabMain.Parent = TabBar
-        tabMain.Size = UDim2.new(0.25, -2, 1, -4)
+        tabMain.Size = UDim2.new(0.33, -2, 1, -4)
         tabMain.Position = UDim2.new(0, 2, 0, 2)
         tabMain.BackgroundColor3 = ungu
         tabMain.BackgroundTransparency = 0.3
         tabMain.Text = "MAIN"
         tabMain.TextColor3 = Color3.fromRGB(255, 255, 255)
         tabMain.Font = Enum.Font.GothamBold
-        tabMain.TextSize = 13
+        tabMain.TextSize = 14
         local tabMainCorner = Instance.new("UICorner")
         tabMainCorner.Parent = tabMain
         tabMainCorner.CornerRadius = UDim.new(0, 8)
         
         local tabESP = Instance.new("TextButton")
         tabESP.Parent = TabBar
-        tabESP.Size = UDim2.new(0.25, -2, 1, -4)
-        tabESP.Position = UDim2.new(0.25, 2, 0, 2)
+        tabESP.Size = UDim2.new(0.33, -2, 1, -4)
+        tabESP.Position = UDim2.new(0.33, 2, 0, 2)
         tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabESP.BackgroundTransparency = 0.5
         tabESP.Text = "ESP"
         tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabESP.Font = Enum.Font.GothamBold
-        tabESP.TextSize = 13
+        tabESP.TextSize = 14
         local tabESPCorner = Instance.new("UICorner")
         tabESPCorner.Parent = tabESP
         tabESPCorner.CornerRadius = UDim.new(0, 8)
         
-        local tabPlayers = Instance.new("TextButton")
-        tabPlayers.Parent = TabBar
-        tabPlayers.Size = UDim2.new(0.25, -2, 1, -4)
-        tabPlayers.Position = UDim2.new(0.5, 2, 0, 2)
-        tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-        tabPlayers.BackgroundTransparency = 0.5
-        tabPlayers.Text = "PLAYERS"
-        tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
-        tabPlayers.Font = Enum.Font.GothamBold
-        tabPlayers.TextSize = 13
-        local tabPlayersCorner = Instance.new("UICorner")
-        tabPlayersCorner.Parent = tabPlayers
-        tabPlayersCorner.CornerRadius = UDim.new(0, 8)
-        
         local tabInfo = Instance.new("TextButton")
         tabInfo.Parent = TabBar
-        tabInfo.Size = UDim2.new(0.25, -2, 1, -4)
-        tabInfo.Position = UDim2.new(0.75, 2, 0, 2)
+        tabInfo.Size = UDim2.new(0.33, -2, 1, -4)
+        tabInfo.Position = UDim2.new(0.66, 2, 0, 2)
         tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabInfo.BackgroundTransparency = 0.5
         tabInfo.Text = "INFO"
         tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabInfo.Font = Enum.Font.GothamBold
-        tabInfo.TextSize = 13
+        tabInfo.TextSize = 14
         local tabInfoCorner = Instance.new("UICorner")
         tabInfoCorner.Parent = tabInfo
         tabInfoCorner.CornerRadius = UDim.new(0, 8)
@@ -949,26 +903,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 10)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
-        local contentPlayers = Instance.new("ScrollingFrame")
-        contentPlayers.Parent = MainFrame
-        contentPlayers.Size = UDim2.new(0.94, 0, 0.74, 0)
-        contentPlayers.Position = UDim2.new(0.03, 0, 0.21, 0)
-        contentPlayers.BackgroundColor3 = gray
-        contentPlayers.BackgroundTransparency = 0.4
-        contentPlayers.BorderSizePixel = 0
-        contentPlayers.ScrollBarThickness = 5
-        contentPlayers.ScrollBarImageColor3 = ungu
-        contentPlayers.CanvasSize = UDim2.new(0, 0, 0, 0)
-        contentPlayers.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        contentPlayers.Visible = false
-        local contentPlayersCorner = Instance.new("UICorner")
-        contentPlayersCorner.Parent = contentPlayers
-        contentPlayersCorner.CornerRadius = UDim.new(0, 12)
-        local layoutPlayers = Instance.new("UIListLayout")
-        layoutPlayers.Parent = contentPlayers
-        layoutPlayers.Padding = UDim.new(0, 8)
-        layoutPlayers.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        
         local contentInfo = Instance.new("ScrollingFrame")
         contentInfo.Parent = MainFrame
         contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
@@ -997,15 +931,11 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabPlayers.BackgroundTransparency = 0.5
-            tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabInfo.BackgroundTransparency = 0.5
             tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = true
             contentESP.Visible = false
-            contentPlayers.Visible = false
             contentInfo.Visible = false
         end)
         tabESP.MouseButton1Click:Connect(function()
@@ -1015,35 +945,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabPlayers.BackgroundTransparency = 0.5
-            tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabInfo.BackgroundTransparency = 0.5
             tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = true
-            contentPlayers.Visible = false
             contentInfo.Visible = false
-        end)
-        tabPlayers.MouseButton1Click:Connect(function()
-            tabPlayers.BackgroundColor3 = ungu
-            tabPlayers.BackgroundTransparency = 0.3
-            tabPlayers.TextColor3 = Color3.fromRGB(255, 255, 255)
-            tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabMain.BackgroundTransparency = 0.5
-            tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabESP.BackgroundTransparency = 0.5
-            tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabInfo.BackgroundTransparency = 0.5
-            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
-            contentMain.Visible = false
-            contentESP.Visible = false
-            contentPlayers.Visible = true
-            contentInfo.Visible = false
-            refreshPlayerList(contentPlayers, layoutPlayers) -- refresh saat buka tab
         end)
         tabInfo.MouseButton1Click:Connect(function()
             tabInfo.BackgroundColor3 = ungu
@@ -1055,12 +962,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
-            tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            tabPlayers.BackgroundTransparency = 0.5
-            tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = false
-            contentPlayers.Visible = false
             contentInfo.Visible = true
         end)
         
@@ -1122,18 +1025,54 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end
         
         -- MAIN tab
-        createToggle(contentMain, "NOCLIP", ungu, function(s) noclipEnabled = s; if s then updateNoclip() end end, false)
-        createToggle(contentMain, "GOD MODE", ungu, function(s) godModeEnabled = s; if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end end, false)
-        createToggle(contentMain, "SPEED 70", ungu, function(s) speedEnabled = s; setSpeed(s) end, false)
-        createToggle(contentMain, "INFINITY JUMP", ungu, function(s) infJumpEnabled = s; if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end end, false)
-        createToggle(contentMain, "CROSSHAIR", ungu, function(s) crosshairEnabled = s; if s then createCrosshair() else removeCrosshair() end end, false)
+        createToggle(contentMain, "NOCLIP", ungu, function(s)
+            noclipEnabled = s
+            if s then updateNoclip() end
+        end, false)
+        
+        createToggle(contentMain, "GOD MODE", ungu, function(s)
+            godModeEnabled = s
+            if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
+        end, false)
+        
+        createToggle(contentMain, "SPEED 70", ungu, function(s)
+            speedEnabled = s
+            setSpeed(s)
+        end, false)
+        
+        createToggle(contentMain, "INFINITY JUMP", ungu, function(s)
+            infJumpEnabled = s
+            if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end
+        end, false)
+        
+        createToggle(contentMain, "CROSSHAIR", ungu, function(s)
+            crosshairEnabled = s
+            if s then createCrosshair() else removeCrosshair() end
+        end, false)
         
         -- ESP tab
-        createToggle(contentESP, "ESP LINE", putih, function(s) espLineEnabled = s; if not s then for _, v in pairs(espLines) do v[1].Visible = false end end end, false)
-        createToggle(contentESP, "ESP BOX", hijau, function(s) espBoxEnabled = s; if not s then for _, v in pairs(espBoxes) do v[1].Visible = false end; for _, v in pairs(espNames) do v[1].Visible = false end; for _, v in pairs(espHealthBars) do v[1].Visible = false end end end, false)
-        createToggle(contentESP, "HOLOGRAM", merah, function(s) hologramEnabled = s; if s then applyHologramToAll() else removeHologramFromAll() end end, false)
+        createToggle(contentESP, "ESP LINE", putih, function(s)
+            espLineEnabled = s
+            if not s then
+                for _, v in pairs(espLines) do v[1].Visible = false end
+            end
+        end, false)
         
-        -- ================== TAB INFO (sama seperti dulu) ==================
+        createToggle(contentESP, "ESP BOX", hijau, function(s)
+            espBoxEnabled = s
+            if not s then
+                for _, v in pairs(espBoxes) do v[1].Visible = false end
+                for _, v in pairs(espNames) do v[1].Visible = false end
+                for _, v in pairs(espHealthBars) do v[1].Visible = false end
+            end
+        end, false)
+        
+        createToggle(contentESP, "HOLOGRAM", merah, function(s)
+            hologramEnabled = s
+            if s then applyHologramToAll() else removeHologramFromAll() end
+        end, false)
+        
+        -- ================== TAB INFO (dengan timer key) ==================
         local timerLabel = Instance.new("TextLabel")
         timerLabel.Parent = contentInfo
         timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
@@ -1200,15 +1139,7 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end)
         updateKeyTimer()
         
-        -- ================== PLAYER LIST (refresh) ==================
-        -- Simpan referensi global untuk update otomatis
-        _G.playerListFrame = contentPlayers
-        _G.playerListLayout = layoutPlayers
-        
-        -- Refresh pertama
-        refreshPlayerList(contentPlayers, layoutPlayers)
-        
-        -- ================== TOMBOL MENU (FLOATING) ==================
+        -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -1252,10 +1183,10 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
-                MainFrame.Size = UDim2.new(0, 400, 0, 560)
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -200, 0.5, -280)}):Play()
+                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
             else
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -200, 1, 0)}):Play()
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
             end
         end)
         
