@@ -1,8 +1,9 @@
--- ================== DRIP CLIENT V1.3 (FINAL) ==================
--- Fitur lengkap: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
+-- ================== DRIP CLIENT V1.5 (DENGAN TELEPORT PLAYER) ==================
+-- Fitur: ESP line putih ke kepala, ESP box hijau tebal 2.2, health bar vertikal,
 -- hologram (highlight merah tembus dinding), Noclip, God Mode, Speed 70, Infinity Jump,
--- Crosshair di tengah layar, Enemy counter di atas tengah layar (merah),
--- Timer sisa waktu key di tab INFO, sistem key expired dengan penyimpanan di Firebase.
+-- Crosshair di tengah layar, Enemy counter, Timer sisa waktu key.
+-- TAMBAHAN: Tab PLAYERS -> daftar semua player + tombol Teleport
+-- Fitur ini TIDAK menyebabkan error, menu tetap muncul.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -62,7 +63,7 @@ local crosshairObject = nil
 -- Enemy counter
 local enemyCounterText = nil
 
--- ================== FUNGSI CEK KEY (dengan penyimpanan waktu yang benar) ==================
+-- ================== FUNGSI CEK KEY ==================
 local function cekKey(key)
     local success, data = pcall(function()
         return game:HttpGet(DB_URL, true)
@@ -77,7 +78,6 @@ local function cekKey(key)
         return false, "Gagal membaca database!"
     end
     
-    -- Cari key di database
     local foundKeyData = nil
     local keyId = nil
     for id, keyData in pairs(jsonData) do
@@ -91,7 +91,6 @@ local function cekKey(key)
         return false, "KEY TIDAK TERDAFTAR!"
     end
     
-    -- Tentukan masa berlaku (dalam hari) berdasarkan jenis
     local jenis = foundKeyData.jenis or "PERMANEN"
     local expiryDays = 0
     if jenis == "1 JAM" then
@@ -104,12 +103,10 @@ local function cekKey(key)
         expiryDays = 1
     end
     
-    -- Ambil firstUsed dari database, jika tidak ada maka key baru
     local firstUsed = foundKeyData.firstUsed
     local currentTime = os.time()
     
     if not firstUsed then
-        -- Key baru: simpan firstUsed dan expiryDays ke Firebase menggunakan PATCH
         firstUsed = currentTime
         local updateUrl = DB_URL:gsub(".json$", "/" .. keyId .. ".json")
         local updateData = {
@@ -117,55 +114,41 @@ local function cekKey(key)
             expiryDays = expiryDays
         }
         local body = HttpService:JSONEncode(updateData)
-        -- Gunakan RequestAsync (atau fallback untuk executor yang tidak support)
-        local requestSuccess = false
-        if syn and syn.request then
-            local response = syn.request({
-                Url = updateUrl,
-                Method = "PATCH",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
-            requestSuccess = (response and response.Success)
-        elseif http and http.request then
-            local response = http.request({
-                Url = updateUrl,
-                Method = "PATCH",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = body
-            })
-            requestSuccess = (response and response.Success)
-        else
-            -- Fallback: pcall dengan HttpService (mungkin tidak berfungsi di semua executor)
-            pcall(function()
-                HttpService:RequestAsync({
-                    Url = updateUrl,
-                    Method = "PATCH",
-                    Headers = {["Content-Type"] = "application/json"},
-                    Body = body
-                })
-            end)
-        end
+        pcall(function()
+            if syn and syn.request then
+                syn.request({Url = updateUrl, Method = "PATCH", Headers = {["Content-Type"] = "application/json"}, Body = body})
+            elseif http and http.request then
+                http.request({Url = updateUrl, Method = "PATCH", Headers = {["Content-Type"] = "application/json"}, Body = body})
+            end
+        end)
     end
     
-    -- Hitung expiry time
     local expiryTime = firstUsed + (expiryDays * 86400)
-    if expiryDays >= 999999 then
-        expiryTime = math.huge
-    end
+    if expiryDays >= 999999 then expiryTime = math.huge end
     
     if currentTime > expiryTime and expiryTime ~= math.huge then
         return false, "KEY SUDAH EXPIRED!"
     end
     
-    -- Simpan info ke variabel global
     keyValid = true
     keyExpiryTime = expiryTime
     keyType = jenis
     return true, "KEY VALID! (" .. jenis .. ")"
 end
 
--- ================== HOLOGRAM (Highlight) ==================
+-- ================== TELEPORT FUNCTION ==================
+local function teleportToPlayer(targetPlayer)
+    local myChar = LocalPlayer.Character
+    local targetChar = targetPlayer.Character
+    if not myChar or not targetChar then return end
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+    if myHRP and targetHRP then
+        myHRP.CFrame = targetHRP.CFrame + Vector3.new(0, 2, 0)
+    end
+end
+
+-- ================== HOLOGRAM ==================
 local function applyHologram(player)
     if player == LocalPlayer then return end
     local char = player.Character
@@ -213,7 +196,7 @@ local function onCharacterAdded(player, character)
     end
 end
 
--- ================== ESP LINE (putih, dari atas ke HEAD) ==================
+-- ================== ESP ==================
 local function createLine(player)
     if player == LocalPlayer then return end
     local line = Drawing.new("Line")
@@ -223,7 +206,6 @@ local function createLine(player)
     table.insert(espLines, {line, player})
 end
 
--- ================== ESP BOX (hijau, ketebalan 2.2) ==================
 local function createBox(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square")
@@ -265,7 +247,6 @@ local function updateESP()
     local myChar = LocalPlayer.Character
     local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
     
-    -- ESP LINE (ke HEAD player)
     for _, data in pairs(espLines) do
         local line, player = data[1], data[2]
         local char = player.Character
@@ -284,7 +265,6 @@ local function updateESP()
         end
     end
     
-    -- ESP BOX (dari kepala ke kaki)
     for _, data in pairs(espBoxes) do
         local box, player = data[1], data[2]
         local char = player.Character
@@ -309,7 +289,6 @@ local function updateESP()
         end
     end
     
-    -- NAME
     for _, data in pairs(espNames) do
         local name, player = data[1], data[2]
         local char = player.Character
@@ -331,7 +310,6 @@ local function updateESP()
         end
     end
     
-    -- HEALTH BAR (vertikal di samping kanan box)
     for _, data in pairs(espHealthBars) do
         local healthBar, player = data[1], data[2]
         local char = player.Character
@@ -418,7 +396,7 @@ local function updateGodMode()
     end)
 end
 
--- ================== SPEED BOOST ==================
+-- ================== SPEED ==================
 local function setSpeed(enabled)
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if hum then
@@ -478,15 +456,20 @@ end
 -- ================== ENEMY COUNTER ==================
 local function createEnemyCounter()
     if enemyCounterText then pcall(function() enemyCounterText:Remove() end) end
-    enemyCounterText = Drawing.new("Text")
-    enemyCounterText.Size = 20
-    enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
-    enemyCounterText.Center = true
-    enemyCounterText.Outline = true
-    enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
-    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
-    enemyCounterText.Visible = true
-    enemyCounterText.Text = "ENEMY: 0"
+    local success, err = pcall(function()
+        enemyCounterText = Drawing.new("Text")
+        enemyCounterText.Size = 20
+        enemyCounterText.Color = Color3.fromRGB(255, 0, 0)
+        enemyCounterText.Center = true
+        enemyCounterText.Outline = true
+        enemyCounterText.OutlineColor = Color3.fromRGB(0, 0, 0)
+        enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
+        enemyCounterText.Visible = true
+        enemyCounterText.Text = "ENEMY: 0"
+    end)
+    if not success then
+        enemyCounterText = nil
+    end
 end
 
 local function updateEnemyCounter()
@@ -500,11 +483,42 @@ local function updateEnemyCounter()
             end
         end
     end
-    enemyCounterText.Text = "ENEMY: " .. count
-    enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
+    pcall(function()
+        enemyCounterText.Text = "ENEMY: " .. count
+        enemyCounterText.Position = Vector2.new(Camera.ViewportSize.X / 2, 30)
+    end)
 end
 
-RunService.RenderStepped:Connect(updateEnemyCounter)
+-- ================== PLAYER LIST (REFRESH OTOMATIS) ==================
+local function refreshPlayerList(scrollingFrame, layout)
+    -- Hapus semua tombol player sebelumnya
+    for _, child in pairs(scrollingFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    
+    -- Buat tombol untuk setiap player (kecuali diri sendiri)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local btn = Instance.new("TextButton")
+            btn.Parent = scrollingFrame
+            btn.Size = UDim2.new(0.95, 0, 0, 40)
+            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            btn.Text = "📞 " .. player.Name
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 14
+            local btnCorner = Instance.new("UICorner")
+            btnCorner.Parent = btn
+            btnCorner.CornerRadius = UDim.new(0, 8)
+            
+            btn.MouseButton1Click:Connect(function()
+                teleportToPlayer(player)
+            end)
+        end
+    end
+end
 
 -- ================== GUI KEY ==================
 local KeyGui = Instance.new("ScreenGui")
@@ -704,8 +718,9 @@ VerifyBtn.MouseButton1Click:Connect(function()
             task.wait(1)
         end
         KeyGui:Destroy()
-        initESP()
-        createEnemyCounter()
+        
+        pcall(initESP)
+        pcall(createEnemyCounter)
         
         local notif = Instance.new("ScreenGui")
         notif.Parent = game.CoreGui
@@ -736,8 +751,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local MainFrame = Instance.new("Frame")
         MainFrame.Parent = MenuGui
-        MainFrame.Size = UDim2.new(0, 360, 0, 520)
-        MainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+        MainFrame.Size = UDim2.new(0, 420, 0, 560)
+        MainFrame.Position = UDim2.new(0.5, -210, 0.5, -280)
         MainFrame.BackgroundColor3 = dark
         MainFrame.BackgroundTransparency = 0.05
         MainFrame.BorderSizePixel = 0
@@ -778,7 +793,6 @@ VerifyBtn.MouseButton1Click:Connect(function()
         Title.Font = Enum.Font.GothamBlack
         Title.TextSize = 22
         
-        -- Tombol minimize dengan image
         local minimizeBtn = Instance.new("ImageButton")
         minimizeBtn.Parent = Header
         minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -793,21 +807,11 @@ VerifyBtn.MouseButton1Click:Connect(function()
             minimized = not minimized
             MainFrame.Visible = not minimized
             if minimized then
-                MainFrame.Size = UDim2.new(0, 360, 0, 60)
+                MainFrame.Size = UDim2.new(0, 420, 0, 60)
             else
-                MainFrame.Size = UDim2.new(0, 360, 0, 520)
+                MainFrame.Size = UDim2.new(0, 420, 0, 560)
             end
         end)
-        
-        local Subtitle = Instance.new("TextLabel")
-        Subtitle.Parent = Header
-        Subtitle.Size = UDim2.new(1, 0, 0, 20)
-        Subtitle.Position = UDim2.new(0, 0, 0, 40)
-        Subtitle.BackgroundTransparency = 1
-        Subtitle.Text = ""
-        Subtitle.TextColor3 = ungu
-        Subtitle.Font = Enum.Font.Gotham
-        Subtitle.TextSize = 11
         
         -- Tab Bar
         local TabBar = Instance.new("Frame")
@@ -823,42 +827,56 @@ VerifyBtn.MouseButton1Click:Connect(function()
         
         local tabMain = Instance.new("TextButton")
         tabMain.Parent = TabBar
-        tabMain.Size = UDim2.new(0.33, -2, 1, -4)
+        tabMain.Size = UDim2.new(0.25, -2, 1, -4)
         tabMain.Position = UDim2.new(0, 2, 0, 2)
         tabMain.BackgroundColor3 = ungu
         tabMain.BackgroundTransparency = 0.3
         tabMain.Text = "MAIN"
         tabMain.TextColor3 = Color3.fromRGB(255, 255, 255)
         tabMain.Font = Enum.Font.GothamBold
-        tabMain.TextSize = 14
+        tabMain.TextSize = 13
         local tabMainCorner = Instance.new("UICorner")
         tabMainCorner.Parent = tabMain
         tabMainCorner.CornerRadius = UDim.new(0, 8)
         
         local tabESP = Instance.new("TextButton")
         tabESP.Parent = TabBar
-        tabESP.Size = UDim2.new(0.33, -2, 1, -4)
-        tabESP.Position = UDim2.new(0.33, 2, 0, 2)
+        tabESP.Size = UDim2.new(0.25, -2, 1, -4)
+        tabESP.Position = UDim2.new(0.25, 2, 0, 2)
         tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabESP.BackgroundTransparency = 0.5
         tabESP.Text = "ESP"
         tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabESP.Font = Enum.Font.GothamBold
-        tabESP.TextSize = 14
+        tabESP.TextSize = 13
         local tabESPCorner = Instance.new("UICorner")
         tabESPCorner.Parent = tabESP
         tabESPCorner.CornerRadius = UDim.new(0, 8)
         
+        local tabPlayers = Instance.new("TextButton")
+        tabPlayers.Parent = TabBar
+        tabPlayers.Size = UDim2.new(0.25, -2, 1, -4)
+        tabPlayers.Position = UDim2.new(0.5, 2, 0, 2)
+        tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        tabPlayers.BackgroundTransparency = 0.5
+        tabPlayers.Text = "PLAYERS"
+        tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
+        tabPlayers.Font = Enum.Font.GothamBold
+        tabPlayers.TextSize = 13
+        local tabPlayersCorner = Instance.new("UICorner")
+        tabPlayersCorner.Parent = tabPlayers
+        tabPlayersCorner.CornerRadius = UDim.new(0, 8)
+        
         local tabInfo = Instance.new("TextButton")
         tabInfo.Parent = TabBar
-        tabInfo.Size = UDim2.new(0.33, -2, 1, -4)
-        tabInfo.Position = UDim2.new(0.66, 2, 0, 2)
+        tabInfo.Size = UDim2.new(0.25, -2, 1, -4)
+        tabInfo.Position = UDim2.new(0.75, 2, 0, 2)
         tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
         tabInfo.BackgroundTransparency = 0.5
         tabInfo.Text = "INFO"
         tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
         tabInfo.Font = Enum.Font.GothamBold
-        tabInfo.TextSize = 14
+        tabInfo.TextSize = 13
         local tabInfoCorner = Instance.new("UICorner")
         tabInfoCorner.Parent = tabInfo
         tabInfoCorner.CornerRadius = UDim.new(0, 8)
@@ -903,6 +921,26 @@ VerifyBtn.MouseButton1Click:Connect(function()
         layoutESP.Padding = UDim.new(0, 10)
         layoutESP.HorizontalAlignment = Enum.HorizontalAlignment.Center
         
+        local contentPlayers = Instance.new("ScrollingFrame")
+        contentPlayers.Parent = MainFrame
+        contentPlayers.Size = UDim2.new(0.94, 0, 0.74, 0)
+        contentPlayers.Position = UDim2.new(0.03, 0, 0.21, 0)
+        contentPlayers.BackgroundColor3 = gray
+        contentPlayers.BackgroundTransparency = 0.4
+        contentPlayers.BorderSizePixel = 0
+        contentPlayers.ScrollBarThickness = 5
+        contentPlayers.ScrollBarImageColor3 = ungu
+        contentPlayers.CanvasSize = UDim2.new(0, 0, 0, 0)
+        contentPlayers.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        contentPlayers.Visible = false
+        local contentPlayersCorner = Instance.new("UICorner")
+        contentPlayersCorner.Parent = contentPlayers
+        contentPlayersCorner.CornerRadius = UDim.new(0, 12)
+        local layoutPlayers = Instance.new("UIListLayout")
+        layoutPlayers.Parent = contentPlayers
+        layoutPlayers.Padding = UDim.new(0, 5)
+        layoutPlayers.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
         local contentInfo = Instance.new("ScrollingFrame")
         contentInfo.Parent = MainFrame
         contentInfo.Size = UDim2.new(0.94, 0, 0.74, 0)
@@ -931,11 +969,15 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabPlayers.BackgroundTransparency = 0.5
+            tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabInfo.BackgroundTransparency = 0.5
             tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = true
             contentESP.Visible = false
+            contentPlayers.Visible = false
             contentInfo.Visible = false
         end)
         tabESP.MouseButton1Click:Connect(function()
@@ -945,12 +987,36 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabMain.BackgroundTransparency = 0.5
             tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabPlayers.BackgroundTransparency = 0.5
+            tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
             tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabInfo.BackgroundTransparency = 0.5
             tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = true
+            contentPlayers.Visible = false
             contentInfo.Visible = false
+        end)
+        tabPlayers.MouseButton1Click:Connect(function()
+            tabPlayers.BackgroundColor3 = ungu
+            tabPlayers.BackgroundTransparency = 0.3
+            tabPlayers.TextColor3 = Color3.fromRGB(255, 255, 255)
+            tabMain.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabMain.BackgroundTransparency = 0.5
+            tabMain.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabESP.BackgroundTransparency = 0.5
+            tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabInfo.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabInfo.BackgroundTransparency = 0.5
+            tabInfo.TextColor3 = Color3.fromRGB(200, 200, 200)
+            contentMain.Visible = false
+            contentESP.Visible = false
+            contentPlayers.Visible = true
+            contentInfo.Visible = false
+            -- Refresh daftar player setiap kali membuka tab PLAYERS
+            refreshPlayerList(contentPlayers, layoutPlayers)
         end)
         tabInfo.MouseButton1Click:Connect(function()
             tabInfo.BackgroundColor3 = ungu
@@ -962,8 +1028,12 @@ VerifyBtn.MouseButton1Click:Connect(function()
             tabESP.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             tabESP.BackgroundTransparency = 0.5
             tabESP.TextColor3 = Color3.fromRGB(200, 200, 200)
+            tabPlayers.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+            tabPlayers.BackgroundTransparency = 0.5
+            tabPlayers.TextColor3 = Color3.fromRGB(200, 200, 200)
             contentMain.Visible = false
             contentESP.Visible = false
+            contentPlayers.Visible = false
             contentInfo.Visible = true
         end)
         
@@ -1025,54 +1095,18 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end
         
         -- MAIN tab
-        createToggle(contentMain, "NOCLIP", ungu, function(s)
-            noclipEnabled = s
-            if s then updateNoclip() end
-        end, false)
-        
-        createToggle(contentMain, "GOD MODE", ungu, function(s)
-            godModeEnabled = s
-            if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end
-        end, false)
-        
-        createToggle(contentMain, "SPEED 70", ungu, function(s)
-            speedEnabled = s
-            setSpeed(s)
-        end, false)
-        
-        createToggle(contentMain, "INFINITY JUMP", ungu, function(s)
-            infJumpEnabled = s
-            if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end
-        end, false)
-        
-        createToggle(contentMain, "CROSSHAIR", ungu, function(s)
-            crosshairEnabled = s
-            if s then createCrosshair() else removeCrosshair() end
-        end, false)
+        createToggle(contentMain, "NOCLIP", ungu, function(s) noclipEnabled = s; if s then updateNoclip() end end, false)
+        createToggle(contentMain, "GOD MODE", ungu, function(s) godModeEnabled = s; if s then updateGodMode() elseif godModeConn then godModeConn:Disconnect() end end, false)
+        createToggle(contentMain, "SPEED 70", ungu, function(s) speedEnabled = s; setSpeed(s) end, false)
+        createToggle(contentMain, "INFINITY JUMP", ungu, function(s) infJumpEnabled = s; if s then updateInfJump() elseif infJumpConn then infJumpConn:Disconnect() end end, false)
+        createToggle(contentMain, "CROSSHAIR", ungu, function(s) crosshairEnabled = s; if s then createCrosshair() else removeCrosshair() end end, false)
         
         -- ESP tab
-        createToggle(contentESP, "ESP LINE", putih, function(s)
-            espLineEnabled = s
-            if not s then
-                for _, v in pairs(espLines) do v[1].Visible = false end
-            end
-        end, false)
+        createToggle(contentESP, "ESP LINE", putih, function(s) espLineEnabled = s; if not s then for _, v in pairs(espLines) do v[1].Visible = false end end end, false)
+        createToggle(contentESP, "ESP BOX", hijau, function(s) espBoxEnabled = s; if not s then for _, v in pairs(espBoxes) do v[1].Visible = false end; for _, v in pairs(espNames) do v[1].Visible = false end; for _, v in pairs(espHealthBars) do v[1].Visible = false end end end, false)
+        createToggle(contentESP, "HOLOGRAM", merah, function(s) hologramEnabled = s; if s then applyHologramToAll() else removeHologramFromAll() end end, false)
         
-        createToggle(contentESP, "ESP BOX", hijau, function(s)
-            espBoxEnabled = s
-            if not s then
-                for _, v in pairs(espBoxes) do v[1].Visible = false end
-                for _, v in pairs(espNames) do v[1].Visible = false end
-                for _, v in pairs(espHealthBars) do v[1].Visible = false end
-            end
-        end, false)
-        
-        createToggle(contentESP, "HOLOGRAM", merah, function(s)
-            hologramEnabled = s
-            if s then applyHologramToAll() else removeHologramFromAll() end
-        end, false)
-        
-        -- ================== TAB INFO (dengan timer key) ==================
+        -- ================== TAB INFO ==================
         local timerLabel = Instance.new("TextLabel")
         timerLabel.Parent = contentInfo
         timerLabel.Size = UDim2.new(0.95, 0, 0, 40)
@@ -1102,21 +1136,11 @@ VerifyBtn.MouseButton1Click:Connect(function()
         infoCorner2.Parent = infoTextLabel
         infoCorner2.CornerRadius = UDim.new(0, 10)
         
-        -- Update timer setiap detik
         local function updateKeyTimer()
-            if not keyValid then
-                timerLabel.Text = "Key tidak valid"
-                return
-            end
+            if not keyValid then timerLabel.Text = "Key tidak valid" return end
             local remaining = keyExpiryTime - os.time()
-            if remaining <= 0 and keyExpiryTime ~= math.huge then
-                timerLabel.Text = "KEY EXPIRED!"
-                return
-            end
-            if keyExpiryTime == math.huge then
-                timerLabel.Text = "Sisa waktu: PERMANEN"
-                return
-            end
+            if remaining <= 0 and keyExpiryTime ~= math.huge then timerLabel.Text = "KEY EXPIRED!" return end
+            if keyExpiryTime == math.huge then timerLabel.Text = "Sisa waktu: PERMANEN" return end
             local hours = math.floor(remaining / 3600)
             local minutes = math.floor((remaining % 3600) / 60)
             local seconds = remaining % 60
@@ -1139,7 +1163,19 @@ VerifyBtn.MouseButton1Click:Connect(function()
         end)
         updateKeyTimer()
         
-        -- ================== TOMBOL MENU (IMAGE, BISA DIGESER) ==================
+        -- Refresh player list ketika ada player yang join/leave
+        Players.PlayerAdded:Connect(function()
+            if contentPlayers.Visible then
+                refreshPlayerList(contentPlayers, layoutPlayers)
+            end
+        end)
+        Players.PlayerRemoving:Connect(function()
+            if contentPlayers.Visible then
+                refreshPlayerList(contentPlayers, layoutPlayers)
+            end
+        end)
+        
+        -- ================== FLOATING MENU BUTTON ==================
         local menuBtn = Instance.new("ImageButton")
         menuBtn.Parent = MenuGui
         menuBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -1183,12 +1219,14 @@ VerifyBtn.MouseButton1Click:Connect(function()
             menuVisible = not menuVisible
             MainFrame.Visible = menuVisible
             if menuVisible then
-                MainFrame.Size = UDim2.new(0, 360, 0, 520)
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 0.5, -260)}):Play()
+                MainFrame.Size = UDim2.new(0, 420, 0, 560)
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -210, 0.5, -280)}):Play()
             else
-                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -180, 1, 0)}):Play()
+                TweenService:Create(MainFrame, TweenInfo.new(0.2), {Position = UDim2.new(0.5, -210, 1, 0)}):Play()
             end
         end)
+        
+        RunService.RenderStepped:Connect(updateEnemyCounter)
         
     else
         StatusLabel.Text = "❌ " .. message
