@@ -215,21 +215,21 @@ local function updateESP()
             local screenPos, vis = Camera:WorldToViewportPoint(head.Position)
             local dist = (myPos - hrp.Position).Magnitude
 
-            -- Tentukan warna: jika kita Survivor, 1 orang = Killer (merah), sisanya Survivor (cyan)
-            -- Jika kita Killer, semua orang = Survivor (cyan)
-            -- Killer = player yang sendiri (hanya 1 dari semua player non-local)
-            -- Deteksi: killer biasanya punya Highlight atau tag khusus, fallback: cek jumlah player
+            -- Deteksi Killer: game VD otomatis kasih Highlight merah di karakter Killer
             local isKiller = false
-            if myRole == "Survivor" then
-                -- Cek apakah player ini punya highlight merah (tanda killer) atau cek via nama
-                local hl = char:FindFirstChildWhichIsA("Highlight")
-                if hl and hl.FillColor == Color3.fromRGB(255,0,0) then
-                    isKiller = true
+            for _, hl in pairs(char:GetChildren()) do
+                if hl:IsA("Highlight") then
+                    local fc = hl.FillColor
+                    -- Cek apakah warna fill mendekati merah
+                    if fc.R > 0.5 and fc.G < 0.4 and fc.B < 0.4 then
+                        isKiller = true
+                        killerPlayer = player
+                        break
+                    end
                 end
-                -- Fallback: jika hanya 1 non-local player, dia killer (solo mode)
-                -- Atau simpan dari chat deteksi
-                if killerPlayer == player then isKiller = true end
             end
+            -- Fallback dari chat deteksi
+            if killerPlayer == player then isKiller = true end
 
             local espColor = isKiller and colorKiller or colorSurvivor
             line.Color                      = espColor
