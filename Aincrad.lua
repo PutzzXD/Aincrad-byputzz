@@ -90,36 +90,47 @@ Players.PlayerRemoving:Connect(removePlayerESP)
 
 -- ================== INIT ESP OBJECT ==================
 local function initObjectESP()
-    for _, v in pairs(espObjectLabels) do pcall(function() v:Remove() end) end
+    for _, v in pairs(espObjectLabels) do pcall(function() if v.highlight then v.highlight:Destroy() end end) end
     espObjectLabels = {}
 
-    local function addLabel(obj, color, tag)
-        local t = Drawing.new("Text")
-        t.Size = 13
-        t.Color = color
-        t.Center = true
-        t.Outline = true
-        t.OutlineColor = Color3.fromRGB(0, 0, 0)
-        t.Visible = false
-        table.insert(espObjectLabels, {drawing = t, object = obj, tag = tag, color = color})
+    local function addHighlight(obj, fillColor, outlineColor, tag)
+        local target = nil
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            target = obj
+        end
+        if not target then return end
+
+        local old = target:FindFirstChildWhichIsA("Highlight")
+        if old then old:Destroy() end
+
+        local hl = Instance.new("Highlight")
+        hl.FillColor           = fillColor
+        hl.FillTransparency    = 0.4
+        hl.OutlineColor        = outlineColor
+        hl.OutlineTransparency = 0.1
+        hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Enabled             = false
+        hl.Parent              = target
+
+        table.insert(espObjectLabels, {highlight = hl, object = target, tag = tag})
     end
 
     -- Generator
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name == "Generator" and obj:IsA("Model") or obj:IsA("BasePart") and obj.Name == "Generator" then
-            addLabel(obj, colorGenerator, "⚙ Generator")
+        if obj.Name == "Generator" and (obj:IsA("Model") or obj:IsA("BasePart")) then
+            addHighlight(obj, colorGenerator, Color3.fromRGB(255, 255, 100), "Generator")
         end
     end
     -- Hook
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj.Name == "Hook" and (obj:IsA("Model") or obj:IsA("BasePart")) then
-            addLabel(obj, colorHook, "🪝 Hook")
+            addHighlight(obj, colorHook, Color3.fromRGB(255, 150, 220), "Hook")
         end
     end
     -- Exit
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj.Name == "Exit" and (obj:IsA("Model") or obj:IsA("BasePart")) then
-            addLabel(obj, colorExit, "🚪 Exit")
+            addHighlight(obj, colorExit, Color3.fromRGB(150, 255, 150), "Exit")
         end
     end
 end
@@ -188,34 +199,20 @@ local function updateESP()
         end
     end
 
-    -- Object ESP (Generator, Hook, Exit)
+    -- Object ESP (Generator, Hook, Exit) - Highlight hologram
     for _, data in pairs(espObjectLabels) do
-        local obj     = data.object
-        local drawing = data.drawing
-        local show    = false
+        local obj = data.object
+        local hl  = data.highlight
 
-        if obj and obj.Parent then
-            local pos = getPos(obj)
-            if pos and myPos then
-                local enabled = false
-                if data.tag:find("Generator") and espGeneratorEnabled then enabled = true end
-                if data.tag:find("Hook")      and espHookEnabled      then enabled = true end
-                if data.tag:find("Exit")      and espExitEnabled      then enabled = true end
-
-                if enabled then
-                    local screenPos, vis = Camera:WorldToViewportPoint(pos)
-                    if vis then
-                        local dist = (myPos - pos).Magnitude
-                        drawing.Position = Vector2.new(screenPos.X, screenPos.Y)
-                        drawing.Text     = data.tag .. " [" .. math.floor(dist) .. "m]"
-                        drawing.Visible  = true
-                        show = true
-                    end
-                end
-            end
+        if obj and obj.Parent and hl then
+            local enabled = false
+            if data.tag == "Generator" and espGeneratorEnabled then enabled = true end
+            if data.tag == "Hook"      and espHookEnabled      then enabled = true end
+            if data.tag == "Exit"      and espExitEnabled      then enabled = true end
+            hl.Enabled = enabled
+        elseif hl then
+            hl.Enabled = false
         end
-
-        if not show then drawing.Visible = false end
     end
 end
 
