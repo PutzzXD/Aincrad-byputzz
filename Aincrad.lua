@@ -25,7 +25,56 @@ local colorHook      = Color3.fromRGB(255, 100, 200)
 local colorExit      = Color3.fromRGB(100, 255, 100)
 local colorWhite     = Color3.fromRGB(255, 255, 255)
 
--- ================== TOGGLE STATE ==================
+-- ================== ROLE DETECTION ==================
+local myRole = "Survivor" -- default Survivor, akan diupdate dari chat
+local killerPlayer = nil  -- simpan siapa killer nya
+
+local function detectRoleFromChat()
+    local TextChatService = game:GetService("TextChatService")
+    -- Monitor chat system messages
+    pcall(function()
+        local chatGui = LocalPlayer.PlayerGui:WaitForChild("Chat", 5)
+        -- fallback: monitor via Players.LocalPlayer.CharacterAdded juga
+    end)
+end
+
+-- Deteksi role lewat chat message bawaan game
+game:GetService("Players").LocalPlayer.Chatted:Connect(function() end) -- placeholder
+
+-- Hook ke semua channel chat untuk deteksi "tim Survivors" / "tim Killer"
+task.spawn(function()
+    local success, TextChatService = pcall(function()
+        return game:GetService("TextChatService")
+    end)
+    if not success then return end
+    
+    pcall(function()
+        TextChatService.MessageReceived:Connect(function(msg)
+            local txt = msg.Text or ""
+            local lower = txt:lower()
+
+            -- Deteksi role kita sendiri
+            if lower:find("tim survivors") or lower:find("tim survivor") then
+                myRole = "Survivor"
+            elseif lower:find("tim killer") or lower:find("tim kill") then
+                myRole = "Killer"
+            end
+
+            -- Coba deteksi siapa killer dari pengumuman game
+            -- Contoh: "X is the Killer" atau "Killer: X"
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    local name = p.Name:lower()
+                    if lower:find(name) and (lower:find("killer") or lower:find("pembunuh")) then
+                        killerPlayer = p
+                    end
+                end
+            end
+        end)
+    end)
+end)
+
+-- ================== TOGGLE STATE ====================
 local espPlayersEnabled   = false
 local espGeneratorEnabled = false
 local espHookEnabled      = false
@@ -166,6 +215,27 @@ local function updateESP()
             local screenPos, vis = Camera:WorldToViewportPoint(head.Position)
             local dist = (myPos - hrp.Position).Magnitude
 
+            -- Tentukan warna: jika kita Survivor, 1 orang = Killer (merah), sisanya Survivor (cyan)
+            -- Jika kita Killer, semua orang = Survivor (cyan)
+            -- Killer = player yang sendiri (hanya 1 dari semua player non-local)
+            -- Deteksi: killer biasanya punya Highlight atau tag khusus, fallback: cek jumlah player
+            local isKiller = false
+            if myRole == "Survivor" then
+                -- Cek apakah player ini punya highlight merah (tanda killer) atau cek via nama
+                local hl = char:FindFirstChildWhichIsA("Highlight")
+                if hl and hl.FillColor == Color3.fromRGB(255,0,0) then
+                    isKiller = true
+                end
+                -- Fallback: jika hanya 1 non-local player, dia killer (solo mode)
+                -- Atau simpan dari chat deteksi
+                if killerPlayer == player then isKiller = true end
+            end
+
+            local espColor = isKiller and colorKiller or colorSurvivor
+            line.Color                      = espColor
+            espPlayerBoxes[player].Color    = espColor
+            espPlayerNames[player].Color    = isKiller and colorKiller or colorWhite
+
             if vis then
                 -- Line dari bawah layar
                 line.From    = Vector2.new(vp.X / 2, vp.Y)
@@ -182,10 +252,11 @@ local function updateESP()
                 box.Position = Vector2.new(screenPos.X - width / 2, topPos.Y)
                 box.Visible  = true
 
-                -- Name + dist
-                local nameD = espPlayerNames[player]
+                -- Name + dist + label role
+                local nameD   = espPlayerNames[player]
+                local roleTag = isKiller and " [KILLER]" or ""
                 nameD.Position = Vector2.new(screenPos.X, topPos.Y - 16)
-                nameD.Text     = player.Name .. " [" .. math.floor(dist) .. "m]"
+                nameD.Text     = player.Name .. roleTag .. " [" .. math.floor(dist) .. "m]"
                 nameD.Visible  = true
             else
                 line.Visible                   = false
