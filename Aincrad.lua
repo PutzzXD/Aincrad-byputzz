@@ -46,6 +46,72 @@ local aimConn           = nil
 local antiAimConn       = nil
 local notifConn         = nil
 local lastNotifTime     = 0
+local autoDodgeEnabled  = false
+local dodgeConn         = nil
+
+-- ================== AUTO DODGE PISAU ==================
+local function startAutoDodge()
+    if dodgeConn then dodgeConn:Disconnect() end
+    dodgeConn = RunService.Heartbeat:Connect(function()
+        if not autoDodgeEnabled then return end
+        local myChar = LocalPlayer.Character
+        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return end
+
+        -- Deteksi semua projectile/knife yang terbang ke arah kita
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                local name = obj.Name:lower()
+                -- Nama umum knife/projectile di MM2
+                if name:find("knife") or name:find("throw") or name:find("projectile") or name == "blade" then
+                    local dist = (myHRP.Position - obj.Position).Magnitude
+                    if dist < 18 then -- deteksi dalam radius 18 studs
+                        -- Cek apakah arah benda mengarah ke kita
+                        local vel = obj.AssemblyLinearVelocity
+                        if vel.Magnitude > 5 then -- benda bergerak cepat
+                            local toMe = (myHRP.Position - obj.Position).Unit
+                            local dot  = vel.Unit:Dot(toMe)
+                            if dot > 0.6 then -- 0.6 = kira-kira mengarah ke kita
+                                -- DODGE! gerak random ke samping
+                                local dodgeDirs = {
+                                    Vector3.new(1, 0, 0),
+                                    Vector3.new(-1, 0, 0),
+                                    Vector3.new(0, 0, 1),
+                                    Vector3.new(0, 0, -1),
+                                    Vector3.new(1, 0, 1),
+                                    Vector3.new(-1, 0, -1),
+                                }
+                                local pick = dodgeDirs[math.random(1, #dodgeDirs)]
+                                local newPos = myHRP.Position + (pick * 10) + Vector3.new(0, 2, 0)
+                                myHRP.CFrame = CFrame.new(newPos)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Juga deteksi dari velocity murderer character (throw animation)
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = (myHRP.Position - hrp.Position).Magnitude
+                    if dist < 25 then
+                        -- Cek animasi throw (cek tool knife hilang sebentar = lagi dilempar)
+                        local knife = p.Character:FindFirstChild("Knife")
+                        if not knife then
+                            -- Knife tidak di tangan = kemungkinan dilempar
+                            local toMe = (myHRP.Position - hrp.Position).Unit
+                            local newPos = myHRP.Position + Vector3.new(toMe.Z * 8, 2, -toMe.X * 8)
+                            myHRP.CFrame = CFrame.new(newPos)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
 
 -- ================== ESP TABLES ==================
 local espLines    = {}
@@ -180,12 +246,12 @@ local function startAutoCollect()
                        (obj:IsA("BasePart") and obj.Name:lower():find("coin"))) and obj:IsA("BasePart") then
                         if obj and obj.Parent then
                             myHRP.CFrame = CFrame.new(obj.Position + Vector3.new(0, 2, 0))
-                            task.wait(0.05) -- super cepat, jeda minimal
+                            task.wait(0.35) -- pelan biar ga kena kick anti-cheat
                         end
                     end
                 end
             end
-            task.wait(0.1)
+            task.wait(0.5)
         end
     end)
 end
@@ -645,7 +711,7 @@ createButton(tabContents["ESP"], "🔍 CEK ROLE SEKARANG", C.accentY, function()
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
 
     local roleColor = role == "Murderer" and C.murderer or role == "Sheriff" and C.sheriff or C.innocent
-    local roleIcon  = role == "Murderer" and "☠" or role == "Sheriff" and "⭐" or "😇"
+    local roleIcon  = role == "Murderer" and "☠" or role == "Sheriff" and "" or ""
 
     local stroke = Instance.new("UIStroke", f)
     stroke.Color = roleColor; stroke.Thickness = 1.5
@@ -799,6 +865,12 @@ createToggle(tabContents["ROLE"], "Notif Murderer Mendekat (< 30m)", C.accentY, 
             end
         end)
     end
+end)
+
+createToggle(tabContents["ROLE"], "Auto Dodge Pisau (< 18m)", C.accentY, function(s)
+    autoDodgeEnabled = s
+    if s then startAutoDodge()
+    elseif dodgeConn then dodgeConn:Disconnect(); dodgeConn = nil end
 end)
 
 createButton(tabContents["ROLE"], "🏃 Kabur dari Murderer", C.accentG, function()
@@ -995,24 +1067,45 @@ FloatBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Drag main frame dari header (support mouse + touch/mobile)
-local mDrag, mStart, mPos0 = false, nil, nil
-Header.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-        mDrag = true; mStart = inp.Position; mPos0 = Main.Position
+local mDrag    = false
+local mStart   = Vector2.new(0, 0)
+local mPos0    = UDim2.new(0, 0, 0, 0)
+
+local function onDragBegan(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1
+    or inp.UserInputType == Enum.UserInputType.Touch then
+        mDrag  = true
+        mStart = Vector2.new(inp.Position.X, inp.Position.Y)
+        mPos0  = Main.Position
     end
-end)
-Header.InputEnded:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+end
+
+local function onDragEnded(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1
+    or inp.UserInputType == Enum.UserInputType.Touch then
         mDrag = false
     end
-end)
-UserInputService.InputChanged:Connect(function(inp)
-    if mDrag and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-        local d = inp.Position - mStart
-        local newX = math.clamp(mPos0.X.Offset + d.X, 0, Camera.ViewportSize.X - Main.AbsoluteSize.X)
-        local newY = math.clamp(mPos0.Y.Offset + d.Y, 0, Camera.ViewportSize.Y - Main.AbsoluteSize.Y)
-        Main.Position = UDim2.new(0, newX, 0, newY)
-    end
-end)
+end
+
+local function onDragChanged(inp)
+    if not mDrag then return end
+    if inp.UserInputType ~= Enum.UserInputType.MouseMovement
+    and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+
+    local curPos = Vector2.new(inp.Position.X, inp.Position.Y)
+    local delta  = curPos - mStart
+    local vp     = Camera.ViewportSize
+    local sz     = Main.AbsoluteSize
+
+    local newX = math.clamp(mPos0.X.Offset + delta.X, 0, vp.X - sz.X)
+    local newY = math.clamp(mPos0.Y.Offset + delta.Y, 0, vp.Y - sz.Y)
+    Main.Position = UDim2.new(0, newX, 0, newY)
+end
+
+Header.InputBegan:Connect(onDragBegan)
+Header.InputEnded:Connect(onDragEnded)
+Header.InputChanged:Connect(onDragChanged)
+UserInputService.InputChanged:Connect(onDragChanged)
+UserInputService.InputEnded:Connect(onDragEnded)
 
 print("[Putzzdev] MM2 Script loaded! 🔪")
