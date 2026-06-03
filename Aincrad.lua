@@ -1,479 +1,345 @@
---[[
-    Script: Putzzdev | Murder Mystery 2 Complete
-    Fitur:
-    1. ESP Hologram (Merah=Murderer, Hijau=Gun, Biru=Innocent)
-    2. Auto Collect Coin (Ngumpulin koin otomatis)
-    3. Silent Aim (Tembak auto kena ke Murderer)
-    4. Auto Grab Gun (Auto ambil gun kalo Sheriff mati)
---]]
+-- ====================================================================
+--          PUTZZDEV | MM2 PREMIUM MOBILE EDITION (WITH BUTTON)
+-- ====================================================================
 
--- Variables
+local KavoUi = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
+local Window = KavoUi.CreateLib("Putzzdev | MM2", "DarkTheme")
+
+-- --- SERVICES ---
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- Settings Toggles
-local ESPEnabled = true
-local AutoCoinEnabled = true
-local SilentAimEnabled = true
-local AutoGrabGunEnabled = true
-
--- ESP Colors Configuration
-local ESPConfig = {
-    Murderer = { Color = Color3.fromRGB(255, 0, 0), Name = "🔪 Murderer" },
-    Sheriff = { Color = Color3.fromRGB(0, 255, 0), Name = "🔫 Sheriff/Gun" },
-    Innocent = { Color = Color3.fromRGB(0, 150, 255), Name = "👤 Innocent" }
+-- --- CONFIGURATION & STATES ---
+local COLORS = {
+    Murderer = Color3.fromRGB(255, 0, 0),
+    Sheriff  = Color3.fromRGB(0, 255, 0),
+    Innocent = Color3.fromRGB(0, 100, 255),
+    GunDrop  = Color3.fromRGB(255, 255, 0)
 }
 
--- Storage
-local espObjects = {}
-local currentTarget = nil
+local Toggles = {
+    Chams = false,
+    SilentAim = false,
+    AutoCoin = false,
+    KillAura = false,
+    AutoGrabGun = false,
+    AutoEscape = false,
+    DodgeKnife = false
+}
 
--- ================================
--- 1. ESP HOLOGRAM (SAMA SEPERTI SEBELUMNYA)
--- ================================
+local SETTINGS = {
+    EscapeDistance = 15,
+    KillAuraRadius = 15,
+    CoinTweenSpeed = 25
+}
 
+local isCollectingCoins = false
+local lastGrabPosition = nil
+local lastAlertTime = 0
+
+-- --- FUNGSI DRAGGABLE & TOGGLE UNTUK TOMBOL MOBILE ---
+local function createMobileButton()
+    local sg = game.CoreGui:FindFirstChild("Putzzdev") or Instance.new("ScreenGui", game.CoreGui)
+    sg.Name = "Putzzdev"
+    
+    local btn = Instance.new("TextButton", sg)
+    btn.Size = UDim2.new(0, 55, 0, 55)
+    btn.Position = UDim2.new(0, 15, 0, 15) -- Posisi awal di pojok kiri atas
+    btn.BackgroundColor3 = Color3.fromRGB(255, 40, 40) -- Warna merah mencolok
+    btn.Text = "P"
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 22
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    
+    -- Membuat tombol jadi bulat elegan
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(1, 0)
+    
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = Color3.new(1, 1, 1)
+    stroke.Thickness = 2
+    
+    -- Logika Buka/Tutup Menu saat di-tap
+    btn.MouseButton1Click:Connect(function()
+        local coreGui = game.CoreGui
+        local uiFrame = coreGui:FindFirstChild("Putzzdev | MM2") or coreGui:FindFirstChild("Putzzdev  MM2")
+        if uiFrame then
+            uiFrame.Enabled = not uiFrame.Enabled
+        end
+    end)
+    
+    -- Logika agar Tombol Bisa Digeser (Drag) di Layar HP
+    local dragging, dragInput, dragStart, startPos
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = btn.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    btn.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            btn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+-- --- UTILITY GAME FUNCTIONS ---
 local function getPlayerRole(player)
-    if not player or not player.Character then return "Innocent" end
-    
+    if not player then return "Innocent" end
     local character = player.Character
+    local backpack = player:FindFirstChild("Backpack")
     
-    for _, tool in ipairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            local toolName = tool.Name:lower()
-            if toolName:find("knife") or toolName:find("dagger") or toolName:find("blade") then
-                return "Murderer"
-            end
-            if toolName:find("gun") or toolName:find("pistol") or toolName:find("revolver") then
-                return "Sheriff"
-            end
-        end
+    if (backpack and backpack:FindFirstChild("Knife")) or (character and character:FindFirstChild("Knife")) then
+        return "Murderer"
     end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid then
-        local holdingItem = humanoid:FindFirstChild("HoldingItem")
-        if holdingItem and (holdingItem.Name:lower():find("gun") or holdingItem.Name:lower():find("pistol")) then
-            return "Sheriff"
-        end
+    if (backpack and backpack:FindFirstChild("Gun")) or (character and character:FindFirstChild("Gun")) then
+        return "Sheriff"
     end
-    
     return "Innocent"
 end
 
-local function createHologramESP(player, roleType)
-    local character = player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
-    
-    local config = ESPConfig[roleType] or ESPConfig.Innocent
-    
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "Putzzdev_ESP_Hologram"
-    billboard.AlwaysOnTop = true
-    billboard.Size = UDim2.new(0, 250, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-    billboard.Parent = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundColor3 = config.Color
-    frame.BackgroundTransparency = 0.2
-    frame.BorderSizePixel = 0
-    frame.Parent = billboard
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = frame
-    
-    local glow = Instance.new("Frame")
-    glow.Size = UDim2.new(1.05, 0, 1.1, 0)
-    glow.Position = UDim2.new(-0.025, 0, -0.05, 0)
-    glow.BackgroundColor3 = config.Color
-    glow.BackgroundTransparency = 0.7
-    glow.BorderSizePixel = 0
-    glow.Parent = frame
-    
-    local glowCorner = Instance.new("UICorner")
-    glowCorner.CornerRadius = UDim.new(0, 10)
-    glowCorner.Parent = glow
-    
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
-    nameLabel.Position = UDim2.new(0, 0, 0.2, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = config.Name .. " | " .. player.Name
-    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameLabel.TextStrokeTransparency = 0.3
-    nameLabel.TextScaled = true
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.Parent = frame
-    
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "Putzzdev_ESP_Highlight"
-    highlight.Adornee = character
-    highlight.FillColor = config.Color
-    highlight.FillTransparency = 0.6
-    highlight.OutlineColor = config.Color
-    highlight.OutlineTransparency = 0.2
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Parent = character
-    
-    espObjects[player] = {
-        Billboard = billboard,
-        Highlight = highlight,
-        Role = roleType
-    }
-    
-    return billboard
-end
-
-local function updateESPColor(player, newRole)
-    if espObjects[player] and espObjects[player].Highlight and espObjects[player].Billboard then
-        local config = ESPConfig[newRole] or ESPConfig.Innocent
-        local highlight = espObjects[player].Highlight
-        local billboard = espObjects[player].Billboard
-        local frame = billboard:FindFirstChildWhichIsA("Frame")
-        
-        if frame then
-            frame.BackgroundColor3 = config.Color
-            local glowFrame = frame:FindFirstChildWhichIsA("Frame")
-            if glowFrame then glowFrame.BackgroundColor3 = config.Color end
-            local nameLabel = frame:FindFirstChildWhichIsA("TextLabel")
-            if nameLabel then nameLabel.Text = config.Name .. " | " .. player.Name end
-        end
-        
-        if highlight then
-            highlight.FillColor = config.Color
-            highlight.OutlineColor = config.Color
-        end
-        
-        espObjects[player].Role = newRole
-    end
-end
-
-local function removeESP(player)
-    if espObjects[player] then
-        if espObjects[player].Billboard then espObjects[player].Billboard:Destroy() end
-        if espObjects[player].Highlight then espObjects[player].Highlight:Destroy() end
-        espObjects[player] = nil
-    end
-end
-
-local function refreshAllESP()
-    if not ESPEnabled then return end
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local role = getPlayerRole(player)
-            if espObjects[player] then
-                if player.Character then updateESPColor(player, role)
-                else removeESP(player) end
-            elseif player.Character then
-                createHologramESP(player, role)
-            end
-        end
-    end
-end
-
--- ================================
--- 2. AUTO COLLECT COIN (NGUMPULIN KOIN OTOMATIS)
--- ================================
-
-local function autoCollectCoin()
-    while AutoCoinEnabled and task.wait(0.1) do
-        if not AutoCoinEnabled then break end
-        
-        local character = LocalPlayer.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then continue end
-        
-        -- Cari semua koin di workspace
-        local coins = {}
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and obj.Name and (obj.Name:lower():find("coin") or obj.Name:lower():find("gem")) then
-                table.insert(coins, obj)
-            end
-        end
-        
-        -- Cari yang terdekat
-        local closestCoin = nil
-        local closestDist = math.huge
-        
-        for _, coin in ipairs(coins) do
-            local distance = (rootPart.Position - coin.Position).Magnitude
-            if distance < closestDist then
-                closestDist = distance
-                closestCoin = coin
-            end
-        end
-        
-        -- Teleport ke koin terdekat
-        if closestCoin then
-            rootPart.CFrame = closestCoin.CFrame + Vector3.new(0, 2, 0)
-            task.wait(0.05)
-        end
-    end
-end
-
--- ================================
--- 3. SILENT AIM (TEMBAK AUTO KENA MURDERER)
--- ================================
-
-local function getMurderer()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and getPlayerRole(player) == "Murderer" then
-            return player
-        end
+local function getMurdererPlayer()
+    for _, p in pairs(Players:GetPlayers()) do
+        if getPlayerRole(p) == "Murderer" then return p end
     end
     return nil
 end
 
-local function silentAim()
-    while SilentAimEnabled and task.wait(0.05) do
-        if not SilentAimEnabled then break end
-        
-        local murderer = getMurderer()
-        if not murderer or not murderer.Character then 
-            currentTarget = nil
-            continue 
-        end
-        
-        local targetHead = murderer.Character:FindFirstChild("Head")
-        if not targetHead then continue end
-        
-        currentTarget = targetHead
-        
-        -- Cek apakah player sedang megang gun
-        local character = LocalPlayer.Character
-        if not character then continue end
-        
-        local hasGun = false
-        for _, tool in ipairs(character:GetChildren()) do
-            if tool:IsA("Tool") and (tool.Name:lower():find("gun") or tool.Name:lower():find("pistol")) then
-                hasGun = true
-                break
+local function sendSideNotification(title, text, color)
+    local sg = game.CoreGui:FindFirstChild("MM2_GodNotif") or Instance.new("ScreenGui", game.CoreGui)
+    sg.Name = "MM2_GodNotif"
+    
+    local container = sg:FindFirstChild("Container") or Instance.new("Frame", sg)
+    if not sg:FindFirstChild("Container") then
+        container.Name = "Container"
+        container.Size = UDim2.new(0, 250, 1, 0)
+        container.Position = UDim2.new(1, -260, 0, 80) -- Diturunkan sedikit agar tidak ketutupan tombol atas HP
+        container.BackgroundTransparency = 1
+        local layout = Instance.new("UIListLayout", container)
+        layout.Padding = UDim.new(0, 6)
+        layout.VerticalAlignment = Enum.VerticalAlignment.Top
+    end
+    
+    local f = Instance.new("Frame", container)
+    f.Size = UDim2.new(1, 0, 0, 45)
+    f.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    f.BorderSizePixel = 0
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", f).Color = color or Color3.new(1,1,1)
+    
+    local t = Instance.new("TextLabel", f)
+    t.Size = UDim2.new(1, -15, 1, 0)
+    t.Position = UDim2.new(0, 12, 0, 0)
+    t.BackgroundTransparency = 1
+    t.Text = "<b>" .. title .. "</b>\n" .. text
+    t.RichText = true
+    t.TextColor3 = Color3.new(1,1,1)
+    t.Font = Enum.Font.GothamMedium
+    t.TextSize = 11
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    
+    task.wait(3)
+    f:Destroy()
+end
+
+-- --- UI TABS ---
+local VisualTab = Window:NewTab("Visuals & ESP")
+local VisualSec = VisualTab:NewSection("Player ESP")
+
+local CombatTab = Window:NewTab("Combat & Role")
+local CombatSec = CombatTab:NewSection("Sheriff & Murderer")
+
+local AutomationTab = Window:NewTab("Automation")
+local AutoSec = AutomationTab:NewSection("Farming & Grabber")
+
+-- --- Toggles SETUP ---
+VisualSec:NewToggle("Hologram Chams (All Roles)", "Warna tubuh tembus pandang sesuai role", function(state)
+    Toggles.Chams = state
+    if not state then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("MM2_GodChams") then
+                p.Character.MM2_GodChams:Destroy()
             end
         end
-        
-        -- Kalo megang gun, arahkan camera ke target
-        if hasGun and targetHead then
-            local cameraOffset = targetHead.Position - Camera.CFrame.Position
-            local newCFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-            Camera.CFrame = newCFrame
-            
-            -- Auto shoot
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-            task.wait(0.01)
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-            task.wait(0.3)
+    end
+end)
+
+CombatSec:NewToggle("Silent Aim (Sheriff)", "", function(state)
+    Toggles.SilentAim = state
+end)
+
+CombatSec:NewToggle("Kill Aura (Murderer)", "Otomatis tebas player terdekat", function(state)
+    Toggles.KillAura = state
+end)
+
+CombatSec:NewToggle("Auto Dodge Knife", "", function(state)
+    Toggles.DodgeKnife = state
+end)
+
+AutoSec:NewToggle("Auto Smooth Collect Coins", "", function(state)
+    Toggles.AutoCoin = state
+end)
+
+AutoSec:NewToggle("Auto Grab Gun", "", function(state)
+    Toggles.AutoGrabGun = state
+end)
+
+AutoSec:NewToggle("Auto Escape (15 Meter)", "", function(state)
+    Toggles.AutoEscape = state
+end)
+
+-- --- CORE LOOPS SYSTEM ---
+
+-- Hook Silent Aim
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    if method == "FireServer" and tostring(self) == "UseGun" and Toggles.SilentAim and getPlayerRole(LocalPlayer) == "Sheriff" then
+        local targetMurd = getMurdererPlayer()
+        if targetMurd and targetMurd.Character and targetMurd.Character:FindFirstChild("HumanoidRootPart") then
+            args[1] = targetMurd.Character.HumanoidRootPart.Position
         end
+    end
+    return oldNamecall(self, unpack(args))
+end)
+
+-- Fungsi Koin
+local function collectCoinsSystem()
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp or isCollectingCoins then return end
+    
+    local mainRoot = workspace:FindFirstChild("Normal") or workspace:FindFirstChild("Map")
+    if not mainRoot then return end
+    
+    local targetCoin = nil
+    local shortestDist = math.huge
+    for _, obj in pairs(mainRoot:GetDescendants()) do
+        if obj.Name == "Coin_Sub" or obj:FindFirstChild("CoinContainer") or (obj:IsA("BasePart") and obj.Name == "Coin") then
+            local coinPart = obj:IsA("BasePart") and obj or obj:FindFirstChildOfClass("BasePart")
+            if coinPart then
+                local dist = (myHrp.Position - coinPart.Position).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    targetCoin = coinPart
+                end
+            end
+        end
+    end
+    
+    if targetCoin and getPlayerRole(LocalPlayer) == "Innocent" then
+        isCollectingCoins = true
+        local dist = (myHrp.Position - targetCoin.Position).Magnitude
+        local duration = dist / SETTINGS.CoinTweenSpeed
+        local tween = game:GetService("TweenService"):Create(myHrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = targetCoin.CFrame})
+        tween:Play()
+        tween.Completed:Wait()
+        isCollectingCoins = false
     end
 end
 
--- ================================
--- 4. AUTO GRAB GUN (AMBIL GUN KALO SHERIFF MATI)
--- ================================
-
-local function autoGrabGun()
-    while AutoGrabGunEnabled and task.wait(0.1) do
-        if not AutoGrabGunEnabled then break end
-        
-        local character = LocalPlayer.Character
-        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then continue end
-        
-        -- Cari gun yang jatuh di lantai
-        local droppedGun = nil
-        local closestDist = math.huge
-        
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("Tool") or (obj:IsA("BasePart") and obj.Parent and obj.Parent:IsA("Tool")) then
-                local tool = obj:IsA("Tool") and obj or obj.Parent
-                if tool and tool.Name and (tool.Name:lower():find("gun") or tool.Name:lower():find("pistol") or tool.Name:lower():find("revolver")) then
-                    local toolHandle = tool:FindFirstChild("Handle") or tool
-                    local distance = (rootPart.Position - toolHandle.Position).Magnitude
-                    if distance < closestDist and distance < 50 then
-                        closestDist = distance
-                        droppedGun = tool
+-- Heartbeat Loop Action
+RunService.Heartbeat:Connect(function()
+    local myChar = LocalPlayer.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    if not myHrp or not myHum or myHum.Health <= 0 then return end
+    
+    local myRole = getPlayerRole(LocalPlayer)
+    local murderer = getMurdererPlayer()
+    
+    if Toggles.Chams then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Character and player ~= LocalPlayer then
+                pcall(function()
+                    local highlight = player.Character:FindFirstChild("MM2_GodChams")
+                    if not highlight then
+                        highlight = Instance.new("Highlight", player.Character)
+                        highlight.Name = "MM2_GodChams"
+                        highlight.FillTransparency = 0.35
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                     end
-                end
+                    local r = getPlayerRole(player)
+                    highlight.FillColor = COLORS[r]
+                    highlight.OutlineColor = COLORS[r]
+                end)
             end
-        end
-        
-        -- Teleport ke gun dan ambil
-        if droppedGun then
-            local gunHandle = droppedGun:FindFirstChild("Handle") or droppedGun
-            rootPart.CFrame = gunHandle.CFrame + Vector3.new(0, 2, 0)
-            task.wait(0.1)
-            
-            -- Coba ambil gun
-            local args = { gunHandle }
-            if droppedGun:FindFirstChild("ClickDetector") then
-                fireclickdetector(droppedGun.ClickDetector)
-            end
-            
-            -- Simulasi grab
-            firetouchinterest(rootPart, gunHandle, 0)
-            task.wait(0.05)
-            firetouchinterest(rootPart, gunHandle, 1)
-            task.wait(0.3)
-        end
-    end
-end
-
--- ================================
--- SETUP & EVENT LISTENERS
--- ================================
-
--- Watch for role changes
-local function watchChanges()
-    RunService.RenderStepped:Connect(function()
-        if not ESPEnabled then return end
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local currentRole = getPlayerRole(player)
-                local storedRole = espObjects[player] and espObjects[player].Role
-                if currentRole ~= storedRole then
-                    updateESPColor(player, currentRole)
-                end
-            end
-        end
-    end)
-end
-
--- Setup all event listeners
-local function setupEventListeners()
-    Players.PlayerAdded:Connect(function(player)
-        if player ~= LocalPlayer then
-            player.CharacterAdded:Connect(function()
-                task.wait(0.5)
-                if ESPEnabled then
-                    local role = getPlayerRole(player)
-                    createHologramESP(player, role)
-                end
-            end)
-        end
-    end)
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            player.CharacterAdded:Connect(function()
-                task.wait(0.5)
-                if ESPEnabled then
-                    local role = getPlayerRole(player)
-                    createHologramESP(player, role)
-                end
-            end)
         end
     end
     
-    LocalPlayer.CharacterAdded:Connect(function()
-        task.wait(1)
-        refreshAllESP()
-    end)
-end
-
--- ================================
--- GUI TOGGLE (LENGKAP DENGAN 4 FITUR)
--- ================================
-
-local function createGUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "Putzzdev_MM2_GUI"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 220, 0, 200)
-    mainFrame.Position = UDim2.new(0, 10, 0.5, -100)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    mainFrame.BackgroundTransparency = 0.15
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
-    
-    local frameCorner = Instance.new("UICorner")
-    frameCorner.CornerRadius = UDim.new(0, 12)
-    frameCorner.Parent = mainFrame
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 35)
-    title.BackgroundTransparency = 1
-    title.Text = "Putzzdev | MM2"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 18
-    title.Parent = mainFrame
-    
-    local buttons = {
-        {Name = "ESP Hologram", toggle = "ESPEnabled", y = 45},
-        {Name = "Auto Coin", toggle = "AutoCoinEnabled", y = 85},
-        {Name = "Silent Aim", toggle = "SilentAimEnabled", y = 125},
-        {Name = "Auto Grab Gun", toggle = "AutoGrabGunEnabled", y = 165}
-    }
-    
-    for _, btn in ipairs(buttons) do
-        local button = Instance.new("TextButton")
-        button.Size = UDim2.new(0.9, 0, 0, 30)
-        button.Position = UDim2.new(0.05, 0, 0, btn.y)
-        button.BackgroundColor3 = Color3.fromRGB(btn.toggle == "ESPEnabled" and 0 or 50, btn.toggle == "AutoCoinEnabled" and 100 or 50, btn.toggle == "SilentAimEnabled" and 150 or 50)
-        button.BackgroundTransparency = 0.3
-        button.Text = btn.Name .. ": " .. (_G[btn.toggle] and "ON" or "OFF")
-        button.TextColor3 = Color3.fromRGB(255, 255, 255)
-        button.Font = Enum.Font.Gotham
-        button.TextSize = 14
-        button.Parent = mainFrame
+    if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") and myRole ~= "Murderer" then
+        local mudHrp = murderer.Character.HumanoidRootPart
+        local distToMurderer = (myHrp.Position - mudHrp.Position).Magnitude
         
-        local btnCorner = Instance.new("UICorner")
-        btnCorner.CornerRadius = UDim.new(0, 6)
-        btnCorner.Parent = button
-        
-        button.MouseButton1Click:Connect(function()
-            _G[btn.toggle] = not _G[btn.toggle]
-            button.Text = btn.Name .. ": " .. (_G[btn.toggle] and "ON" or "OFF")
-            
-            if btn.toggle == "ESPEnabled" then
-                if _G.ESPEnabled then refreshAllESP() else
-                    for p, _ in pairs(espObjects) do removeESP(p) end
-                end
-            elseif btn.toggle == "AutoCoinEnabled" then
-                if _G.AutoCoinEnabled then task.spawn(autoCollectCoin) end
-            elseif btn.toggle == "SilentAimEnabled" then
-                if _G.SilentAimEnabled then task.spawn(silentAim) end
-            elseif btn.toggle == "AutoGrabGunEnabled" then
-                if _G.AutoGrabGunEnabled then task.spawn(autoGrabGun) end
+        if Toggles.AutoEscape and distToMurderer <= SETTINGS.EscapeDistance then
+            if tick() - lastAlertTime > 3 then
+                lastAlertTime = tick()
+                task.spawn(function() sendSideNotification("Putzzdev | SISTEM", "Pembunuh mendekat tp aktif!", Color3.fromRGB(255,0,0)) end)
             end
-        end)
+            local escapeDirection = (myHrp.Position - mudHrp.Position).Unit
+            myHrp.CFrame = CFrame.new(myHrp.Position + (escapeDirection * 25))
+        end
+        
+        if Toggles.DodgeKnife and murderer.Character:FindFirstChild("Knife") and distToMurderer <= 25 then
+            if murderer.Character.Knife:FindFirstChild("Effect") or myHum.MoveDirection.Magnitude > 0 then
+                myHrp.Velocity = Vector3.new(0, 65, 0) + (Camera.CFrame.RightVector * 45)
+            end
+        end
     end
-end
-
--- ================================
--- INITIALIZATION
--- ================================
-
-local function init()
-    setupEventListeners()
-    watchChanges()
-    createGUI()
     
-    -- Spawn all features
-    task.spawn(autoCollectCoin)
-    task.spawn(silentAim)
-    task.spawn(autoGrabGun)
+    if Toggles.KillAura and myRole == "Murderer" and myChar:FindFirstChild("Knife") then
+        for _, victim in pairs(Players:GetPlayers()) do
+            if victim ~= LocalPlayer and victim.Character and victim.Character:FindFirstChild("HumanoidRootPart") then
+                local vicHrp = victim.Character.HumanoidRootPart
+                if (myHrp.Position - vicHrp.Position).Magnitude <= SETTINGS.KillAuraRadius then
+                    myChar.Knife:Activate()
+                    firetouchinterest(myChar.Knife.Handle, vicHrp, 0)
+                    firetouchinterest(myChar.Knife.Handle, vicHrp, 1)
+                end
+            end
+        end
+    end
     
-    print("=========================================")
-    print("Putzzdev | Murder Mystery 2 Complete v1.0")
-    print("Fitur yang tersedia:")
-    print("🔴 ESP Hologram (Merah = Murderer)")
-    print("🟢 ESP Hologram (Hijau = Sheriff/Gun)")
-    print("🔵 ESP Hologram (Biru = Innocent)")
-    print("🪙 Auto Collect Coin")
-    print("🎯 Silent Aim (Auto tembak ke Murderer)")
-    print("script by Putzzdev")
-    print("=========================================")
-end
+    local gunDrop = workspace:FindFirstChild("GunDrop")
+    if gunDrop and gunDrop:IsA("BasePart") and myRole == "Innocent" then
+        if Toggles.AutoGrabGun then
+            local distToGun = (myHrp.Position - gunDrop.Position).Magnitude
+            if distToGun <= 300 and not lastGrabPosition then
+                lastGrabPosition = myHrp.CFrame
+                myHrp.CFrame = gunDrop.CFrame
+                task.wait(0.15)
+                myHrp.CFrame = lastGrabPosition
+                lastGrabPosition = nil
+            end
+        end
+    end
+    
+    if Toggles.AutoCoin and myRole == "Innocent" and not gunDrop then
+        pcall(collectCoinsSystem)
+    end
+end)
 
--- Start
-pcall(init)
+LocalPlayer.CharacterAdded:Connect(function()
+    isCollectingCoins = false
+    lastGrabPosition = nil
+end)
+
+-- Jalankan pembuatan tombol mobile otomatis
+createMobileButton()
+sendSideNotification("Putzzdev  menu!", Color3.fromRGB(0, 255, 150))
