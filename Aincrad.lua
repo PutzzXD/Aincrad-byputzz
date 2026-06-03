@@ -239,19 +239,34 @@ local function startAutoCollect()
         while autoCollect do
             local myChar = LocalPlayer.Character
             local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            if myHRP then
+            local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if myHRP and hum then
+                -- Cari coin terdekat
+                local nearest, nearestDist = nil, math.huge
                 for _, obj in pairs(workspace:GetDescendants()) do
-                    if not autoCollect then break end
                     if (obj.Name == "Coin" or obj.Name == "coin" or
                        (obj:IsA("BasePart") and obj.Name:lower():find("coin"))) and obj:IsA("BasePart") then
-                        if obj and obj.Parent then
-                            myHRP.CFrame = CFrame.new(obj.Position + Vector3.new(0, 2, 0))
-                            task.wait(0.35) -- pelan biar ga kena kick anti-cheat
+                        if obj.Parent then
+                            local d = (myHRP.Position - obj.Position).Magnitude
+                            if d < nearestDist then
+                                nearestDist = d
+                                nearest     = obj
+                            end
                         end
                     end
                 end
+
+                if nearest then
+                    if nearestDist > 4 then
+                        -- Jalan ke coin pakai Humanoid:MoveTo (natural, anti kick)
+                        hum:MoveTo(nearest.Position)
+                        task.wait(0.8)
+                    else
+                        task.wait(0.3)
+                    end
+                end
             end
-            task.wait(0.5)
+            task.wait(0.2)
         end
     end)
 end
@@ -711,7 +726,7 @@ createButton(tabContents["ESP"], "🔍 CEK ROLE SEKARANG", C.accentY, function()
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
 
     local roleColor = role == "Murderer" and C.murderer or role == "Sheriff" and C.sheriff or C.innocent
-    local roleIcon  = role == "Murderer" and "☠" or role == "Sheriff" and "" or ""
+    local roleIcon  = role == "Murderer" and "☠" or role == "Sheriff" and "⭐" or "😇"
 
     local stroke = Instance.new("UIStroke", f)
     stroke.Color = roleColor; stroke.Thickness = 1.5
@@ -763,11 +778,6 @@ createToggle(tabContents["ROLE"], "Anti Aim (Susah Di-aim)", C.murderer, functio
     end
 end)
 
-createToggle(tabContents["ROLE"], "ESP Sheriff (Hindari Sheriff)", C.sheriff, function(s)
-    -- Sheriff ESP sudah di-cover oleh ESP semua player, ini toggle khusus warna lebih terang
-    espEnabled = espEnabled or s
-end)
-
 createButton(tabContents["ROLE"], "🗡 Teleport ke Innocent Terdekat", C.murderer, function()
     local myChar = LocalPlayer.Character
     local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
@@ -789,21 +799,38 @@ createButton(tabContents["ROLE"], "🗡 Teleport ke Innocent Terdekat", C.murder
 end)
 
 sectionLabel(tabContents["ROLE"], "  ⭐ SHERIFF")
-createToggle(tabContents["ROLE"], "Aim Assist ke Murderer", C.sheriff, function(s)
+createToggle(tabContents["ROLE"], "Silent Aim ke Murderer", C.sheriff, function(s)
     aimAssistEnabled = s
     if aimConn then aimConn:Disconnect(); aimConn = nil end
     if s then
+        -- Silent aim: peluru auto kena murderer tanpa lock camera
+        -- Cara kerja: hook bullet/projectile, ubah arahnya ke murderer
         aimConn = RunService.RenderStepped:Connect(function()
             if not aimAssistEnabled then return end
             local myChar = LocalPlayer.Character
             local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myHRP then return end
+
+            -- Cari murderer
+            local murdererHead = nil
             for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    if getRole(p) == "Murderer" then
-                        local head = p.Character:FindFirstChild("Head")
-                        if head then
-                            Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+                if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
+                    murdererHead = p.Character:FindFirstChild("Head")
+                    break
+                end
+            end
+            if not murdererHead then return end
+
+            -- Hook semua projectile yang baru ditembak (BasePart bergerak cepat dari LocalPlayer)
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and not obj.Anchored then
+                    local name = obj.Name:lower()
+                    if name:find("bullet") or name:find("gun") or name:find("shot") or name:find("pellet") then
+                        local vel = obj.AssemblyLinearVelocity
+                        if vel.Magnitude > 50 then
+                            -- Ubah arah ke murderer
+                            local dir = (murdererHead.Position - obj.Position).Unit
+                            obj.AssemblyLinearVelocity = dir * vel.Magnitude
                         end
                     end
                 end
@@ -1067,45 +1094,38 @@ FloatBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Drag main frame dari header (support mouse + touch/mobile)
-local mDrag    = false
-local mStart   = Vector2.new(0, 0)
-local mPos0    = UDim2.new(0, 0, 0, 0)
+do
+    local dragging   = false
+    local dragStartX = 0
+    local dragStartY = 0
+    local frameStartX = 0
+    local frameStartY = 0
 
-local function onDragBegan(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1
-    or inp.UserInputType == Enum.UserInputType.Touch then
-        mDrag  = true
-        mStart = Vector2.new(inp.Position.X, inp.Position.Y)
-        mPos0  = Main.Position
-    end
+    Header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging   = true
+            dragStartX = input.Position.X
+            dragStartY = input.Position.Y
+            frameStartX = Main.Position.X.Offset
+            frameStartY = Main.Position.Y.Offset
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        if not dragging then return end
+        local mouse = UserInputService:GetMouseLocation()
+        local vp    = Camera.ViewportSize
+        local sz    = Main.AbsoluteSize
+        local newX  = math.clamp(frameStartX + (mouse.X - dragStartX), 0, vp.X - sz.X)
+        local newY  = math.clamp(frameStartY + (mouse.Y - dragStartY), 0, vp.Y - sz.Y)
+        Main.Position = UDim2.new(0, newX, 0, newY)
+    end)
 end
-
-local function onDragEnded(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1
-    or inp.UserInputType == Enum.UserInputType.Touch then
-        mDrag = false
-    end
-end
-
-local function onDragChanged(inp)
-    if not mDrag then return end
-    if inp.UserInputType ~= Enum.UserInputType.MouseMovement
-    and inp.UserInputType ~= Enum.UserInputType.Touch then return end
-
-    local curPos = Vector2.new(inp.Position.X, inp.Position.Y)
-    local delta  = curPos - mStart
-    local vp     = Camera.ViewportSize
-    local sz     = Main.AbsoluteSize
-
-    local newX = math.clamp(mPos0.X.Offset + delta.X, 0, vp.X - sz.X)
-    local newY = math.clamp(mPos0.Y.Offset + delta.Y, 0, vp.Y - sz.Y)
-    Main.Position = UDim2.new(0, newX, 0, newY)
-end
-
-Header.InputBegan:Connect(onDragBegan)
-Header.InputEnded:Connect(onDragEnded)
-Header.InputChanged:Connect(onDragChanged)
-UserInputService.InputChanged:Connect(onDragChanged)
-UserInputService.InputEnded:Connect(onDragEnded)
 
 print("[Putzzdev] MM2 Script loaded! 🔪")
