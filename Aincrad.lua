@@ -31,10 +31,21 @@ local C = {
 }
 
 -- ================== STATE ==================
-local espEnabled      = false
-local coinESPEnabled  = false
-local autoCollect     = false
-local highlightMurder = false
+local espEnabled        = false
+local coinESPEnabled    = false
+local autoCollect       = false
+local highlightMurder   = false
+
+-- Role features
+local murdererNearby    = false
+local aimAssistEnabled  = false
+local autoShootEnabled  = false
+local notifMurderer     = false
+local antiAimEnabled    = false
+local aimConn           = nil
+local antiAimConn       = nil
+local notifConn         = nil
+local lastNotifTime     = 0
 
 -- ================== ESP TABLES ==================
 local espLines    = {}
@@ -158,28 +169,23 @@ local collectConn = nil
 
 local function startAutoCollect()
     if collectConn then collectConn:Disconnect() end
-    collectConn = RunService.Heartbeat:Connect(function()
-        if not autoCollect then return end
-        local myChar = LocalPlayer.Character
-        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myHRP then return end
-
-        local nearest, nearestDist = nil, math.huge
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj.Name == "Coin" or obj.Name == "coin" or
-               (obj:IsA("BasePart") and obj.Name:lower():find("coin")) then
-                if obj:IsA("BasePart") then
-                    local d = (myHRP.Position - obj.Position).Magnitude
-                    if d < nearestDist then
-                        nearestDist = d
-                        nearest     = obj
+    task.spawn(function()
+        while autoCollect do
+            local myChar = LocalPlayer.Character
+            local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myHRP then
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if not autoCollect then break end
+                    if (obj.Name == "Coin" or obj.Name == "coin" or
+                       (obj:IsA("BasePart") and obj.Name:lower():find("coin"))) and obj:IsA("BasePart") then
+                        if obj and obj.Parent then
+                            myHRP.CFrame = CFrame.new(obj.Position + Vector3.new(0, 2, 0))
+                            task.wait(0.05) -- super cepat, jeda minimal
+                        end
                     end
                 end
             end
-        end
-
-        if nearest and nearestDist > 2 then
-            myHRP.CFrame = CFrame.new(nearest.Position + Vector3.new(0, 2, 0))
+            task.wait(0.1)
         end
     end)
 end
@@ -392,15 +398,20 @@ titleLabel.TextXAlignment     = Enum.TextXAlignment.Left
 titleLabel.Parent             = Header
 
 local devLabel = Instance.new("TextLabel")
-devLabel.Size                 = UDim2.new(0.6, 0, 0, 16)
-devLabel.Position             = UDim2.new(0, 54, 1, -20)
+devLabel.Size                 = UDim2.new(0.6, 0, 0, 18)
+devLabel.Position             = UDim2.new(0, 54, 1, -22)
 devLabel.BackgroundTransparency = 1
-devLabel.Text                 = "by Putzzdev"
-devLabel.TextColor3           = C.accent
-devLabel.Font                 = Enum.Font.Gotham
-devLabel.TextSize             = 11
+devLabel.Text                 = "✦ Putzzdev"
+devLabel.TextColor3           = Color3.fromRGB(255, 160, 60)
+devLabel.Font                 = Enum.Font.GothamBold
+devLabel.TextSize             = 13
 devLabel.TextXAlignment       = Enum.TextXAlignment.Left
 devLabel.Parent               = Header
+
+-- Glow/pulse animasi nama dev
+TweenService:Create(devLabel, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+    TextColor3 = Color3.fromRGB(255, 220, 100)
+}):Play()
 
 -- Close button
 local closeBtn = Instance.new("TextButton")
@@ -421,7 +432,7 @@ closeBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ========= TABS =========
-local tabNames   = {"ESP", "COINS", "PLAYERS"}
+local tabNames   = {"ESP", "COINS", "ROLE", "PLAYERS"}
 local tabBtns    = {}
 local tabContents = {}
 local activeTab  = "ESP"
@@ -663,6 +674,150 @@ createButton(tabContents["COINS"], "🔄 Refresh ESP Koin", C.coin, function()
     initCoinESP()
 end)
 
+-- ========= ROLE TAB =========
+sectionLabel(tabContents["ROLE"], "  ☠ MURDERER")
+createToggle(tabContents["ROLE"], "Anti Aim (Susah Di-aim)", C.murderer, function(s)
+    antiAimEnabled = s
+    if antiAimConn then antiAimConn:Disconnect(); antiAimConn = nil end
+    if s then
+        antiAimConn = RunService.Heartbeat:Connect(function()
+            if not antiAimEnabled then return end
+            local myChar = LocalPlayer.Character
+            local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myHRP then
+                -- Jitter kecil random biar susah di-aim
+                local jitter = Vector3.new(
+                    math.random(-3, 3) * 0.08,
+                    0,
+                    math.random(-3, 3) * 0.08
+                )
+                myHRP.CFrame = myHRP.CFrame + jitter
+            end
+        end)
+    end
+end)
+
+createToggle(tabContents["ROLE"], "ESP Sheriff (Hindari Sheriff)", C.sheriff, function(s)
+    -- Sheriff ESP sudah di-cover oleh ESP semua player, ini toggle khusus warna lebih terang
+    espEnabled = espEnabled or s
+end)
+
+createButton(tabContents["ROLE"], "🗡 Teleport ke Innocent Terdekat", C.murderer, function()
+    local myChar = LocalPlayer.Character
+    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+    local nearest, nearestDist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local role = getRole(p)
+            if role == "Innocent" then
+                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local d = (myHRP.Position - hrp.Position).Magnitude
+                    if d < nearestDist then nearestDist = d; nearest = hrp end
+                end
+            end
+        end
+    end
+    if nearest then myHRP.CFrame = nearest.CFrame + Vector3.new(0, 3, 0) end
+end)
+
+sectionLabel(tabContents["ROLE"], "  ⭐ SHERIFF")
+createToggle(tabContents["ROLE"], "Aim Assist ke Murderer", C.sheriff, function(s)
+    aimAssistEnabled = s
+    if aimConn then aimConn:Disconnect(); aimConn = nil end
+    if s then
+        aimConn = RunService.RenderStepped:Connect(function()
+            if not aimAssistEnabled then return end
+            local myChar = LocalPlayer.Character
+            local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then return end
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    if getRole(p) == "Murderer" then
+                        local head = p.Character:FindFirstChild("Head")
+                        if head then
+                            Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+createButton(tabContents["ROLE"], "🔫 Teleport ke Murderer", C.sheriff, function()
+    local myChar = LocalPlayer.Character
+    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then myHRP.CFrame = hrp.CFrame + Vector3.new(0, 4, 0) end
+            break
+        end
+    end
+end)
+
+sectionLabel(tabContents["ROLE"], "  😇 INNOCENT")
+createToggle(tabContents["ROLE"], "Notif Murderer Mendekat (< 30m)", C.accentY, function(s)
+    notifMurderer = s
+    if notifConn then notifConn:Disconnect(); notifConn = nil end
+    if s then
+        notifConn = RunService.Heartbeat:Connect(function()
+            if not notifMurderer then return end
+            local myChar = LocalPlayer.Character
+            local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then return end
+            local now = tick()
+            if now - lastNotifTime < 4 then return end -- cooldown 4 detik
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
+                    local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp and (myHRP.Position - hrp.Position).Magnitude < 30 then
+                        lastNotifTime = now
+                        -- Popup notif
+                        local gui = Instance.new("ScreenGui")
+                        gui.Name = "MurderAlert"; gui.ResetOnSpawn = false
+                        gui.Parent = game:GetService("CoreGui")
+                        local f = Instance.new("Frame", gui)
+                        f.Size = UDim2.new(0, 280, 0, 52)
+                        f.Position = UDim2.new(0.5, -140, 0, 60)
+                        f.BackgroundColor3 = Color3.fromRGB(40, 10, 10)
+                        f.BorderSizePixel = 0
+                        Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
+                        local fs = Instance.new("UIStroke", f)
+                        fs.Color = C.murderer; fs.Thickness = 2
+                        local fl = Instance.new("TextLabel", f)
+                        fl.Size = UDim2.new(1,0,1,0); fl.BackgroundTransparency = 1
+                        fl.Text = "⚠ MURDERER MENDEKAT!"
+                        fl.TextColor3 = C.murderer; fl.Font = Enum.Font.GothamBold; fl.TextSize = 16
+                        TweenService:Create(f, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Position = UDim2.new(0.5,-140,0,80)}):Play()
+                        task.delay(3, function() game:GetService("Debris"):AddItem(gui, 0) end)
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+createButton(tabContents["ROLE"], "🏃 Kabur dari Murderer", C.accentG, function()
+    local myChar = LocalPlayer.Character
+    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                -- Teleport ke arah berlawanan dari murderer sejauh 60 studs
+                local dir = (myHRP.Position - hrp.Position).Unit
+                myHRP.CFrame = CFrame.new(myHRP.Position + dir * 60)
+            end
+            break
+        end
+    end
+end)
+
 -- ========= PLAYERS TAB =========
 sectionLabel(tabContents["PLAYERS"], "  TELEPORT KE PLAYER")
 
@@ -839,20 +994,24 @@ FloatBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Drag main frame dari header
+-- Drag main frame dari header (support mouse + touch/mobile)
 local mDrag, mStart, mPos0 = false, nil, nil
 Header.InputBegan:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
         mDrag = true; mStart = inp.Position; mPos0 = Main.Position
     end
 end)
 Header.InputEnded:Connect(function(inp)
-    if inp.UserInputType == Enum.UserInputType.MouseButton1 then mDrag = false end
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        mDrag = false
+    end
 end)
 UserInputService.InputChanged:Connect(function(inp)
-    if mDrag and inp.UserInputType == Enum.UserInputType.MouseMovement then
+    if mDrag and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
         local d = inp.Position - mStart
-        Main.Position = UDim2.new(mPos0.X.Scale, mPos0.X.Offset + d.X, mPos0.Y.Scale, mPos0.Y.Offset + d.Y)
+        local newX = math.clamp(mPos0.X.Offset + d.X, 0, Camera.ViewportSize.X - Main.AbsoluteSize.X)
+        local newY = math.clamp(mPos0.Y.Offset + d.Y, 0, Camera.ViewportSize.Y - Main.AbsoluteSize.Y)
+        Main.Position = UDim2.new(0, newX, 0, newY)
     end
 end)
 
