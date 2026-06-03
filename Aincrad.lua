@@ -799,36 +799,81 @@ createButton(tabContents["ROLE"], "🗡 Teleport ke Innocent Terdekat", C.murder
 end)
 
 sectionLabel(tabContents["ROLE"], "  ⭐ SHERIFF")
-createToggle(tabContents["ROLE"], "Silent Aim ke Murderer", C.sheriff, function(s)
+createToggle(tabContents["ROLE"], "Silent Aim + Auto Shoot", C.sheriff, function(s)
     aimAssistEnabled = s
     if aimConn then aimConn:Disconnect(); aimConn = nil end
     if s then
-        -- Silent aim: peluru auto kena murderer tanpa lock camera
-        -- Cara kerja: hook bullet/projectile, ubah arahnya ke murderer
+        local lastShot    = 0
+        local shootDelay  = 1.2 -- jeda antar tembakan (detik)
+
         aimConn = RunService.RenderStepped:Connect(function()
             if not aimAssistEnabled then return end
             local myChar = LocalPlayer.Character
             local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myHRP then return end
 
-            -- Cari murderer
+            -- Cari murderer & cek apakah kelihatan di layar
+            local murdererChar = nil
             local murdererHead = nil
+            local murdererHRP  = nil
+
             for _, p in pairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
+                    murdererChar = p.Character
                     murdererHead = p.Character:FindFirstChild("Head")
+                    murdererHRP  = p.Character:FindFirstChild("HumanoidRootPart")
                     break
                 end
             end
-            if not murdererHead then return end
+            if not murdererHead or not murdererHRP then return end
 
-            -- Hook semua projectile yang baru ditembak (BasePart bergerak cepat dari LocalPlayer)
+            -- Cek apakah murderer visible di layar
+            local _, onScreen = Camera:WorldToViewportPoint(murdererHead.Position)
+            local dist = (myHRP.Position - murdererHRP.Position).Magnitude
+
+            -- Auto shoot: kalau murderer keliatan di layar & jarak < 200 studs & cooldown habis
+            local now = tick()
+            if onScreen and dist < 200 and (now - lastShot) >= shootDelay then
+                lastShot = now
+
+                -- Cari tool Gun di karakter
+                local gun = myChar:FindFirstChild("Gun")
+                    or myChar:FindFirstChildWhichIsA("Tool")
+
+                if gun then
+                    -- Fire remote event tembak milik gun
+                    pcall(function()
+                        -- Coba FireServer dengan target head position
+                        for _, v in pairs(gun:GetDescendants()) do
+                            if v:IsA("RemoteEvent") then
+                                v:FireServer(murdererHead.Position, murdererHead)
+                            end
+                        end
+                    end)
+
+                    -- Simulasi klik mouse (sebagai fallback)
+                    pcall(function()
+                        local mouse = LocalPlayer:GetMouse()
+                        if mouse then
+                            -- Arahkan ray ke murderer head untuk simulasi tembak
+                            local shootRemote = game:GetService("ReplicatedStorage"):FindFirstChild("Shoot")
+                                or game:GetService("ReplicatedStorage"):FindFirstChild("Fire")
+                                or game:GetService("ReplicatedStorage"):FindFirstChild("BulletHit")
+                            if shootRemote and shootRemote:IsA("RemoteEvent") then
+                                shootRemote:FireServer(murdererHead.Position, murdererHead)
+                            end
+                        end
+                    end)
+                end
+            end
+
+            -- Hook bullet yang ditembak - redirect ke murderer head (silent aim)
             for _, obj in pairs(workspace:GetDescendants()) do
                 if obj:IsA("BasePart") and not obj.Anchored then
                     local name = obj.Name:lower()
-                    if name:find("bullet") or name:find("gun") or name:find("shot") or name:find("pellet") then
+                    if name:find("bullet") or name:find("shot") or name:find("pellet") or name:find("proj") then
                         local vel = obj.AssemblyLinearVelocity
-                        if vel.Magnitude > 50 then
-                            -- Ubah arah ke murderer
+                        if vel.Magnitude > 30 then
                             local dir = (murdererHead.Position - obj.Position).Unit
                             obj.AssemblyLinearVelocity = dir * vel.Magnitude
                         end
