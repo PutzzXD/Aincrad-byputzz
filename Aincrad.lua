@@ -815,40 +815,68 @@ Instance.new("UICorner", FloatBtn).CornerRadius = UDim.new(1,0)
 local fStroke = Instance.new("UIStroke", FloatBtn); fStroke.Color = Color3.fromRGB(255,150,50); fStroke.Thickness = 2
 TweenService:Create(fStroke, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Thickness = 4}):Play()
 
--- Drag float btn
+-- Drag float btn + toggle menu (pisah drag vs click)
 do
-    local drag = false; local sx, sy, px, py = 0, 0, 0, 0
+    local drag      = false
+    local moved     = false  -- track apakah beneran di-drag atau cuma klik
+    local sx, sy    = 0, 0
+    local px, py    = 0, 0
+    local DRAG_THRESHOLD = 6  -- pixel minimum biar dianggap drag
+
     FloatBtn.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            drag = true; sx = inp.Position.X; sy = inp.Position.Y
-            px = FloatBtn.Position.X.Offset; py = FloatBtn.Position.Y.Offset
-            inp.Changed:Connect(function()
-                if inp.UserInputState == Enum.UserInputState.End then drag = false end
-            end)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            drag  = true
+            moved = false
+            sx    = inp.Position.X
+            sy    = inp.Position.Y
+            px    = FloatBtn.Position.X.Offset
+            py    = FloatBtn.Position.Y.Offset
         end
     end)
+
+    FloatBtn.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1
+        or inp.UserInputType == Enum.UserInputType.Touch then
+            -- Kalau tidak bergerak = ini klik biasa → toggle menu
+            if not moved then
+                local menuOpen = Main.Visible
+                if not menuOpen then
+                    Main.Visible = true
+                    Main.Size    = UDim2.new(0,0,0,0)
+                    TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Back), {
+                        Size = UDim2.new(0,390,0,530)
+                    }):Play()
+                else
+                    TweenService:Create(Main, TweenInfo.new(0.2), {
+                        Size = UDim2.new(0,0,0,0)
+                    }):Play()
+                    task.delay(0.22, function() Main.Visible = false end)
+                end
+            end
+            drag  = false
+            moved = false
+        end
+    end)
+
     RunService.RenderStepped:Connect(function()
         if not drag then return end
-        local m  = UserInputService:GetMouseLocation()
-        local vp = Camera.ViewportSize
-        FloatBtn.Position = UDim2.new(0,
-            math.clamp(px + (m.X - sx), 0, vp.X - 48), 0,
-            math.clamp(py + (m.Y - sy), 0, vp.Y - 48)
-        )
+        local m   = UserInputService:GetMouseLocation()
+        local dx  = m.X - sx
+        local dy  = m.Y - sy
+        -- Tandai moved kalau sudah geser lebih dari threshold
+        if math.abs(dx) > DRAG_THRESHOLD or math.abs(dy) > DRAG_THRESHOLD then
+            moved = true
+        end
+        if moved then
+            local vp = Camera.ViewportSize
+            FloatBtn.Position = UDim2.new(0,
+                math.clamp(px + dx, 0, vp.X - 48), 0,
+                math.clamp(py + dy, 0, vp.Y - 48)
+            )
+        end
     end)
 end
-
-local menuOpen = true
-FloatBtn.MouseButton1Click:Connect(function()
-    menuOpen = not menuOpen
-    if menuOpen then
-        Main.Visible = true
-        TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Back), {Size = UDim2.new(0,390,0,530)}):Play()
-    else
-        TweenService:Create(Main, TweenInfo.new(0.2), {Size = UDim2.new(0,0,0,0)}):Play()
-        task.wait(0.25); Main.Visible = false
-    end
-end)
 
 -- Drag main menu dari header
 do
