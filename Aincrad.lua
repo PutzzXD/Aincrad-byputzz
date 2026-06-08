@@ -50,7 +50,7 @@ local currentUserKey = nil
 local keyExpiryTime = 0
 local keyJenis = ""
 local keyValidGlobal = false
-local infoKeyCountdownLabel = nil -- Digunakan untuk update text di tab info secara real-time
+local infoKeyCountdownLabel = nil
 
 local function loadKeyData()
     if isfile and isfile(SAVE_FILE) then
@@ -119,12 +119,10 @@ local function checkKeyExpiry(inputKey)
     local currentTime = os.time()
     local expiryTime = nil
     
-    -- SYSTEM ANTI-RESET PERMANEN: Cek apakah key ini pernah dipakai sebelumnya di device ini
     if activeKeys[inputKey] and activeKeys[inputKey].expiryTime then
         expiryTime = activeKeys[inputKey].expiryTime
         if currentTime > expiryTime then return false, "KEY SUDAH EXPIRED!" end
     else
-        -- Jika pemakaian pertama kali, hitung waktu kedaluwarsa mutlak dari sekarang dan simpan permanen
         expiryTime = currentTime + (expiryDays * 86400)
         activeKeys[inputKey] = {
             firstUsed = currentTime, key = inputKey, expiryDays = expiryDays,
@@ -141,8 +139,6 @@ local function checkKeyExpiry(inputKey)
     local _, _, _, _, timeStr = getTimeRemaining(expiryTime)
     return true, "VALID! Sisa: " .. timeStr
 end
-
--- Loading screen dihapus
 
 -- ================== VARIABEL FITUR CHEAT ==================
 local espEnabled = false
@@ -189,7 +185,7 @@ local invisibleRootPart = nil
 local invisibleHumanoid = nil
 
 local themeColor = Color3.fromRGB(156, 39, 176)
-local darkPurple = Color3.fromRGB(18, 14, 24) -- Disesuaikan agar warna tidak terlalu terang mencolok
+local darkPurple = Color3.fromRGB(18, 14, 24)
 local boxColor = Color3.fromRGB(0, 0, 0)
 local skeletonColor = Color3.fromRGB(0, 255, 0)
 local redColor = Color3.fromRGB(255, 0, 0)
@@ -231,7 +227,7 @@ local function showNotification(title, text, duration, color)
     notif:Destroy()
 end
 
--- ================== ENGINE ACTIONS (FLY, SPEED, DLL) ==================
+-- ================== ENGINE ACTIONS ==================
 local function startFlyMode()
     local plr = LocalPlayer
     if not plr.Character then return end
@@ -249,8 +245,6 @@ local function startFlyMode()
     local flyBodyVelocity = Instance.new("BodyVelocity", flyTorso)
     flyBodyVelocity.Name = "FlyBV"
     flyBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-
-    local lastctrl = {f = 0, b = 0, l = 0, r = 0}
 
     flyConnection = RunService.RenderStepped:Connect(function()
         if not flyEnabled or not plr.Character or not flyTorso:IsDescendantOf(workspace) then return end
@@ -315,7 +309,6 @@ local function toggleInvisible(state)
     invisibleEnabled = state
     if invisibleConnection then invisibleConnection:Disconnect() invisibleConnection = nil end
     if state and LocalPlayer.Character then
-        -- Reset dulu invisibleParts sebelum isi ulang
         invisibleParts = {}
         invisibleRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         invisibleHumanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -338,7 +331,6 @@ local function toggleInvisible(state)
             end
         end)
     else
-        -- Kembalikan transparency ke nilai asli masing-masing part
         if LocalPlayer.Character then
             for _, data in pairs(invisibleParts) do
                 pcall(function()
@@ -347,7 +339,6 @@ local function toggleInvisible(state)
                     end
                 end)
             end
-            -- Fallback: semua part yang masih transparan dikembalikan ke 0
             for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
                 if v:IsA("BasePart") and v.Transparency == 0.5 then
                     v.Transparency = 0
@@ -360,10 +351,8 @@ local function toggleInvisible(state)
     end
 end
 
--- ================== GOD MODE PERMANEN (BENERAN KEBAL) ==================
--- Fungsi setupAntiDamage yang ditingkatkan dengan multiple connections dan custom Disconnect
+-- ================== GOD MODE PERMANEN ==================
 local function setupAntiDamage()
-    -- Hapus semua koneksi sebelumnya jika ada
     if antiDamageHeartbeat then
         if type(antiDamageHeartbeat) == "table" and antiDamageHeartbeat._disconnect then
             antiDamageHeartbeat:_disconnect()
@@ -373,10 +362,8 @@ local function setupAntiDamage()
         antiDamageHeartbeat = nil
     end
     
-    -- Kumpulan koneksi yang akan dikelola
     local connections = {}
     
-    -- Fungsi untuk membuat karakter kebal
     local function makeInvincible()
         local char = LocalPlayer.Character
         if not char then return end
@@ -386,13 +373,11 @@ local function setupAntiDamage()
         hum.Health = hum.MaxHealth
         hum.BreakJointsOnDeath = false
         
-        -- Hentikan koneksi HealthChanged sebelumnya jika ada
         if hum._godHealthConn then
             hum._godHealthConn:Disconnect()
             hum._godHealthConn = nil
         end
         
-        -- Pasang HealthChanged untuk respon instan
         local healthConn = hum.HealthChanged:Connect(function(newHealth)
             if antiDamageEnabled and newHealth < hum.MaxHealth then
                 hum.Health = hum.MaxHealth
@@ -402,7 +387,6 @@ local function setupAntiDamage()
         table.insert(connections, healthConn)
     end
     
-    -- Heartbeat untuk cadangan (jika HealthChanged gagal)
     local hbConn = RunService.Heartbeat:Connect(function()
         if antiDamageEnabled and LocalPlayer.Character then
             local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -413,19 +397,16 @@ local function setupAntiDamage()
     end)
     table.insert(connections, hbConn)
     
-    -- Terapkan ke karakter saat ini
     makeInvincible()
     
-    -- Event ketika karakter berganti (respawn)
     local charConn = LocalPlayer.CharacterAdded:Connect(function()
-        task.wait(0.2) -- tunggu humanoid tersedia
+        task.wait(0.2)
         if antiDamageEnabled then
             makeInvincible()
         end
     end)
     table.insert(connections, charConn)
     
-    -- Buat objek dengan metode Disconnect untuk kompatibilitas dengan toggle lama
     local godModeObject = {}
     function godModeObject:Disconnect()
         for _, conn in ipairs(connections) do
@@ -601,7 +582,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- LOOP PERMANEN UPDATE COUNTDOWN KEY DI TAB INFORMASI
 task.spawn(function()
     while true do
         task.wait(1)
@@ -791,44 +771,17 @@ local function loadMainScript()
 
     -- ================== FREEZE ALL PLAYERS (VISUAL ONLY) ==================
     local freezeAllEnabled = false
-    local frozenConnections = {}
 
     local function freezeAllPlayers(state)
         freezeAllEnabled = state
-        -- Unfreeze dulu semua
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character then
                 for _, part in pairs(p.Character:GetDescendants()) do
                     if part:IsA("BasePart") then
-                        pcall(function() part.Anchored = false end)
+                        pcall(function() part.Anchored = state end)
                     end
                 end
             end
-        end
-        if state then
-            -- Freeze semua player lain secara client-side
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    for _, part in pairs(p.Character:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            pcall(function() part.Anchored = true end)
-                        end
-                    end
-                end
-            end
-            -- Freeze karakter baru yang spawn
-            Players.PlayerAdded:Connect(function(p)
-                p.CharacterAdded:Connect(function(char)
-                    if freezeAllEnabled then
-                        task.wait(0.5)
-                        for _, part in pairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                pcall(function() part.Anchored = true end)
-                            end
-                        end
-                    end
-                end)
-            end)
         end
     end
 
@@ -837,119 +790,7 @@ local function loadMainScript()
         showNotification("FREEZE", s and "Semua player dibekukan!" or "Freeze dinonaktifkan", 2, s and Color3.fromRGB(0,180,255) or Color3.fromRGB(200,200,200))
     end)
 
-    -- ================== FREEZE DIRI SENDIRI ==================
-    local freezeSelfEnabled = false
-    local freezeSelfBtn = nil
-    local freezeSelfBtnVisible = false
-
-    local function applyFreezeSelf(state)
-        freezeSelfEnabled = state
-        local myChar = LocalPlayer.Character
-        if myChar then
-            local hrp = myChar:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.Anchored = state
-            end
-        end
-        -- Update warna tombol float freeze
-        if freezeSelfBtn then
-            TweenService:Create(freezeSelfBtn, TweenInfo.new(0.15), {
-                BackgroundColor3 = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(30, 30, 45)
-            }):Play()
-            freezeSelfBtn.Text = state and "❄ ON" or "❄ OFF"
-        end
-    end
-
-    -- Re-anchor saat respawn
-    LocalPlayer.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        if freezeSelfEnabled then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then hrp.Anchored = true end
-        end
-    end)
-
-    createToggle(tabUtility, "❄️ Freeze Diri Sendiri (Tombol Luar)", false, function(s)
-        -- Munculkan/sembunyikan tombol float freeze diri
-        freezeSelfBtnVisible = s
-        if s then
-            if not freezeSelfBtn then
-                -- Buat tombol float khusus freeze diri
-                freezeSelfBtn = Instance.new("TextButton", ScreenGui)
-                freezeSelfBtn.Size             = UDim2.new(0, 72, 0, 36)
-                freezeSelfBtn.Position         = UDim2.new(0, 15, 0.5, 40)
-                freezeSelfBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-                freezeSelfBtn.BorderSizePixel  = 0
-                freezeSelfBtn.Text             = "❄ OFF"
-                freezeSelfBtn.TextColor3       = Color3.fromRGB(0, 220, 255)
-                freezeSelfBtn.Font             = Enum.Font.GothamBold
-                freezeSelfBtn.TextSize         = 13
-                freezeSelfBtn.ZIndex           = 20
-                Instance.new("UICorner", freezeSelfBtn).CornerRadius = UDim.new(0, 10)
-                local fss = Instance.new("UIStroke", freezeSelfBtn)
-                fss.Color = Color3.fromRGB(0, 200, 255); fss.Thickness = 1.5
-
-                -- Drag + Click sistem threshold (sama kayak tombol menu utama)
-                local fsDrag   = false
-                local fsMoved  = false
-                local fsX, fsY = 0, 0
-                local fsPX, fsPY = 0, 0
-                local THRESHOLD = 6
-
-                freezeSelfBtn.InputBegan:Connect(function(inp)
-                    if inp.UserInputType == Enum.UserInputType.MouseButton1
-                    or inp.UserInputType == Enum.UserInputType.Touch then
-                        fsDrag  = true
-                        fsMoved = false
-                        fsX     = inp.Position.X
-                        fsY     = inp.Position.Y
-                        fsPX    = freezeSelfBtn.Position.X.Offset
-                        fsPY    = freezeSelfBtn.Position.Y.Offset
-                    end
-                end)
-
-                freezeSelfBtn.InputEnded:Connect(function(inp)
-                    if inp.UserInputType == Enum.UserInputType.MouseButton1
-                    or inp.UserInputType == Enum.UserInputType.Touch then
-                        -- Kalau tidak gerak = klik biasa → toggle freeze
-                        if not fsMoved then
-                            applyFreezeSelf(not freezeSelfEnabled)
-                        end
-                        fsDrag  = false
-                        fsMoved = false
-                    end
-                end)
-
-                RunService.RenderStepped:Connect(function()
-                    if not fsDrag then return end
-                    local UIS = game:GetService("UserInputService")
-                    local m   = UIS:GetMouseLocation()
-                    local dx  = m.X - fsX
-                    local dy  = m.Y - fsY
-                    -- Anggap drag kalau geser lebih dari threshold
-                    if math.abs(dx) > THRESHOLD or math.abs(dy) > THRESHOLD then
-                        fsMoved = true
-                    end
-                    if fsMoved then
-                        local vp = workspace.CurrentCamera.ViewportSize
-                        freezeSelfBtn.Position = UDim2.new(0,
-                            math.clamp(fsPX + dx, 0, vp.X - 72), 0,
-                            math.clamp(fsPY + dy, 0, vp.Y - 36)
-                        )
-                    end
-                end)
-
-                -- Animasi masuk
-                freezeSelfBtn.Size = UDim2.new(0, 0, 0, 36)
-                TweenService:Create(freezeSelfBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
-                    Size = UDim2.new(0, 72, 0, 36)
-                }):Play()
-            else
-                freezeSelfBtn.Visible = true
-            end
-        else
-            -- Sembunyikan tombol dan matikan freeze
-                -- ================== FREEZE DIRI SENDIRI (TOMBOL DI KANAN ATAS) ==================
+    -- ================== FREEZE DIRI SENDIRI (TOMBOL DI KANAN ATAS, BISA DIGESER) ==================
     local freezeSelfEnabled = false
     local freezeSelfBtn = nil
     local freezeSelfBtnVisible = false
@@ -969,7 +810,6 @@ local function loadMainScript()
         end
     end
 
-    -- Re-anchor saat respawn
     LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(0.5)
         if freezeSelfEnabled then
@@ -985,7 +825,7 @@ local function loadMainScript()
                 freezeSelfBtn = Instance.new("TextButton")
                 freezeSelfBtn.Parent = ScreenGui
                 freezeSelfBtn.Size = UDim2.new(0, 75, 0, 38)
-                freezeSelfBtn.Position = UDim2.new(1, -85, 0, 10) -- Pojok kanan atas
+                freezeSelfBtn.Position = UDim2.new(1, -85, 0, 10)
                 freezeSelfBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
                 freezeSelfBtn.BorderSizePixel = 0
                 freezeSelfBtn.Text = "❄ OFF"
@@ -998,22 +838,31 @@ local function loadMainScript()
                 stroke.Color = Color3.fromRGB(0, 200, 255)
                 stroke.Thickness = 1.5
                 
-                -- Drag handler (tanpa threshold, drag langsung pindah)
                 local dragging = false
                 local dragStart = nil
                 local startPos = nil
+                local clickStart = nil
                 
                 freezeSelfBtn.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         dragging = true
                         dragStart = input.Position
                         startPos = freezeSelfBtn.Position
+                        clickStart = input.Position
                     end
                 end)
                 
                 freezeSelfBtn.InputEnded:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         dragging = false
+                        -- Deteksi apakah ini klik atau drag (threshold 8px)
+                        if clickStart and dragStart then
+                            local deltaX = math.abs(clickStart.X - dragStart.X)
+                            local deltaY = math.abs(clickStart.Y - dragStart.Y)
+                            if deltaX < 8 and deltaY < 8 then
+                                applyFreezeSelf(not freezeSelfEnabled)
+                            end
+                        end
                         -- Clamp posisi agar tidak keluar layar
                         task.wait(0.05)
                         local absX = freezeSelfBtn.AbsolutePosition.X
@@ -1025,6 +874,7 @@ local function loadMainScript()
                             local newY = math.clamp(absY, 0, maxY)
                             freezeSelfBtn.Position = UDim2.new(0, newX, 0, newY)
                         end
+                        clickStart = nil
                     end
                 end)
                 
@@ -1041,22 +891,6 @@ local function loadMainScript()
                     end
                 end)
                 
-                -- Klik untuk toggle freeze (bukan drag)
-                local clickStart = nil
-                freezeSelfBtn.MouseButton1Click:Connect(function()
-                    -- Cek apakah ini klik murni (bukan drag) dengan membandingkan posisi awal dan akhir
-                    if clickStart and (math.abs(clickStart.X - dragStart.X) < 5 and math.abs(clickStart.Y - dragStart.Y) < 5) then
-                        applyFreezeSelf(not freezeSelfEnabled)
-                    end
-                end)
-                
-                freezeSelfBtn.InputBegan:Connect(function(input)
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                        clickStart = input.Position
-                    end
-                end)
-                
-                -- Animasi masuk
                 freezeSelfBtn.Size = UDim2.new(0, 0, 0, 38)
                 TweenService:Create(freezeSelfBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
                     Size = UDim2.new(0, 75, 0, 38)
@@ -1065,7 +899,6 @@ local function loadMainScript()
                 freezeSelfBtn.Visible = true
             end
         else
-            -- Sembunyikan tombol dan matikan freeze
             applyFreezeSelf(false)
             if freezeSelfBtn then
                 TweenService:Create(freezeSelfBtn, TweenInfo.new(0.15), {
@@ -1080,7 +913,7 @@ local function loadMainScript()
         end
     end)
 
-    -- TAB INFO DENGAN SISTEM KEY COUNTDOWN DARI SERVER
+    -- ================== TAB INFO ==================
     local infoBox = Instance.new("Frame", tabInfo) infoBox.Size = UDim2.new(0.95, 0, 0, 150) infoBox.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
     Instance.new("UICorner", infoBox).CornerRadius = UDim.new(0, 8)
     
@@ -1090,7 +923,6 @@ local function loadMainScript()
 
     local keyTypeText = Instance.new("TextLabel", infoBox) keyTypeText.Size = UDim2.new(0.92, 0, 0, 22) keyTypeText.Position = UDim2.new(0.04, 0, 0, 52) keyTypeText.BackgroundTransparency = 1 keyTypeText.TextColor3 = Color3.fromRGB(200, 210, 255) keyTypeText.Font = Enum.Font.Gotham executorText.TextSize = 11 keyTypeText.Text = "Jenis Paket: " .. keyJenis keyTypeText.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Label Hitung Mundur yang diupdate tiap detik secara real-time
     infoKeyCountdownLabel = Instance.new("TextLabel", infoBox)
     infoKeyCountdownLabel.Size = UDim2.new(0.92, 0, 0, 22)
     infoKeyCountdownLabel.Position = UDim2.new(0.04, 0, 0, 74)
@@ -1125,9 +957,9 @@ KeyGui.Name = "DripKeySystem"
 KeyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local KeyFrame = Instance.new("Frame", KeyGui)
-KeyFrame.Size = UDim2.new(0, 340, 0, 320) -- Diperkecil agar sedeng dan tidak kebesaran di HP
+KeyFrame.Size = UDim2.new(0, 340, 0, 320)
 KeyFrame.Position = UDim2.new(0.5, -170, 0.5, -160)
-KeyFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24) -- Warna gelap kalem
+KeyFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
 KeyFrame.Active = true
 KeyFrame.Draggable = true
 Instance.new("UICorner", KeyFrame).CornerRadius = UDim.new(0, 12)
@@ -1226,9 +1058,7 @@ WebsiteBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- ANIMASI MULTI PROGRESS BAR BARU SETELAH KEY VALIDI (MENGGANTIKAN TEKS 1,2,3)
 local function runPremiumSuccessProgress()
-    -- Hilangkan semua isi input GUI Key untuk proses transisi
     InfoFrame:Destroy()
     KeyTextBox:Destroy()
     VerifyBtn:Destroy()
@@ -1238,7 +1068,6 @@ local function runPremiumSuccessProgress()
     StatusLabel.Text = "Mengecek token validasi di database..."
     StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     
-    -- Membuat progress bar kesuksesan di dalam UI Key
     local successBarBg = Instance.new("Frame", KeyFrame)
     successBarBg.Size = UDim2.new(0.9, 0, 0, 6)
     successBarBg.Position = UDim2.new(0.05, 0, 0.48, 0)
@@ -1264,7 +1093,6 @@ local function runPremiumSuccessProgress()
     setProgress(1.00, "Sukses! Meluncurkan interface utama...")
     task.wait(0.5)
 
-    -- Fade out dan destroy seluruh Key GUI sebelum buka main menu
     TweenService:Create(KeyFrame, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
     for _, v in pairs(KeyFrame:GetDescendants()) do
         if v:IsA("TextLabel") or v:IsA("TextButton") then
@@ -1274,7 +1102,6 @@ local function runPremiumSuccessProgress()
         end
     end
     task.wait(0.3)
-    -- Destroy seluruh KeyGui biar bersih
     if game.CoreGui:FindFirstChild("DripKeySystem") then
         game.CoreGui.DripKeySystem:Destroy()
     end
@@ -1282,7 +1109,6 @@ local function runPremiumSuccessProgress()
     pcall(loadMainScript)
 end
 
--- EVENT KLIK AUTENTIKASI KEY
 VerifyBtn.MouseButton1Click:Connect(function()
     local inputKey = KeyTextBox.Text:gsub("%s+", "")
     if inputKey == "" then 
@@ -1300,14 +1126,13 @@ VerifyBtn.MouseButton1Click:Connect(function()
         StatusLabel.Text = "Key Valid!" 
         StatusLabel.TextColor3 = Color3.fromRGB(0,255,120) 
         task.wait(0.5)
-        runPremiumSuccessProgress() -- Menjalankan progress bar animasi pengganti teks hitung mundur
+        runPremiumSuccessProgress()
     else
         StatusLabel.Text = message 
         StatusLabel.TextColor3 = Color3.fromRGB(255,0,0) 
     end
 end)
 
--- ================== INITIAL RUN ESP GRAPHICS ==================
 for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
 Players.PlayerAdded:Connect(function(p) createESP(p) createSkeleton(p) end)
 Players.PlayerRemoving:Connect(function(p)
