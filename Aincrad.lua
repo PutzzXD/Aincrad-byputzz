@@ -949,10 +949,127 @@ local function loadMainScript()
             end
         else
             -- Sembunyikan tombol dan matikan freeze
+                -- ================== FREEZE DIRI SENDIRI (TOMBOL DI KANAN ATAS) ==================
+    local freezeSelfEnabled = false
+    local freezeSelfBtn = nil
+    local freezeSelfBtnVisible = false
+
+    local function applyFreezeSelf(state)
+        freezeSelfEnabled = state
+        local myChar = LocalPlayer.Character
+        if myChar then
+            local hrp = myChar:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.Anchored = state
+            end
+        end
+        if freezeSelfBtn then
+            freezeSelfBtn.BackgroundColor3 = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(30, 30, 50)
+            freezeSelfBtn.Text = state and "❄ ON" or "❄ OFF"
+        end
+    end
+
+    -- Re-anchor saat respawn
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if freezeSelfEnabled then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = true end
+        end
+    end)
+
+    createToggle(tabUtility, "❄️ Freeze Diri Sendiri (Tombol)", false, function(s)
+        freezeSelfBtnVisible = s
+        if s then
+            if not freezeSelfBtn then
+                freezeSelfBtn = Instance.new("TextButton")
+                freezeSelfBtn.Parent = ScreenGui
+                freezeSelfBtn.Size = UDim2.new(0, 75, 0, 38)
+                freezeSelfBtn.Position = UDim2.new(1, -85, 0, 10) -- Pojok kanan atas
+                freezeSelfBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+                freezeSelfBtn.BorderSizePixel = 0
+                freezeSelfBtn.Text = "❄ OFF"
+                freezeSelfBtn.TextColor3 = Color3.fromRGB(0, 220, 255)
+                freezeSelfBtn.Font = Enum.Font.GothamBold
+                freezeSelfBtn.TextSize = 13
+                freezeSelfBtn.ZIndex = 20
+                Instance.new("UICorner", freezeSelfBtn).CornerRadius = UDim.new(0, 12)
+                local stroke = Instance.new("UIStroke", freezeSelfBtn)
+                stroke.Color = Color3.fromRGB(0, 200, 255)
+                stroke.Thickness = 1.5
+                
+                -- Drag handler (tanpa threshold, drag langsung pindah)
+                local dragging = false
+                local dragStart = nil
+                local startPos = nil
+                
+                freezeSelfBtn.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        dragging = true
+                        dragStart = input.Position
+                        startPos = freezeSelfBtn.Position
+                    end
+                end)
+                
+                freezeSelfBtn.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        dragging = false
+                        -- Clamp posisi agar tidak keluar layar
+                        task.wait(0.05)
+                        local absX = freezeSelfBtn.AbsolutePosition.X
+                        local absY = freezeSelfBtn.AbsolutePosition.Y
+                        local maxX = Camera.ViewportSize.X - freezeSelfBtn.AbsoluteSize.X
+                        local maxY = Camera.ViewportSize.Y - freezeSelfBtn.AbsoluteSize.Y
+                        if absX < 0 or absX > maxX or absY < 0 or absY > maxY then
+                            local newX = math.clamp(absX, 0, maxX)
+                            local newY = math.clamp(absY, 0, maxY)
+                            freezeSelfBtn.Position = UDim2.new(0, newX, 0, newY)
+                        end
+                    end
+                end)
+                
+                freezeSelfBtn.InputChanged:Connect(function(input)
+                    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                        local delta = input.Position - dragStart
+                        local newX = startPos.X.Offset + delta.X
+                        local newY = startPos.Y.Offset + delta.Y
+                        local maxX = Camera.ViewportSize.X - freezeSelfBtn.AbsoluteSize.X
+                        local maxY = Camera.ViewportSize.Y - freezeSelfBtn.AbsoluteSize.Y
+                        newX = math.clamp(newX, 0, maxX)
+                        newY = math.clamp(newY, 0, maxY)
+                        freezeSelfBtn.Position = UDim2.new(0, newX, 0, newY)
+                    end
+                end)
+                
+                -- Klik untuk toggle freeze (bukan drag)
+                local clickStart = nil
+                freezeSelfBtn.MouseButton1Click:Connect(function()
+                    -- Cek apakah ini klik murni (bukan drag) dengan membandingkan posisi awal dan akhir
+                    if clickStart and (math.abs(clickStart.X - dragStart.X) < 5 and math.abs(clickStart.Y - dragStart.Y) < 5) then
+                        applyFreezeSelf(not freezeSelfEnabled)
+                    end
+                end)
+                
+                freezeSelfBtn.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        clickStart = input.Position
+                    end
+                end)
+                
+                -- Animasi masuk
+                freezeSelfBtn.Size = UDim2.new(0, 0, 0, 38)
+                TweenService:Create(freezeSelfBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
+                    Size = UDim2.new(0, 75, 0, 38)
+                }):Play()
+            else
+                freezeSelfBtn.Visible = true
+            end
+        else
+            -- Sembunyikan tombol dan matikan freeze
             applyFreezeSelf(false)
             if freezeSelfBtn then
                 TweenService:Create(freezeSelfBtn, TweenInfo.new(0.15), {
-                    Size = UDim2.new(0, 0, 0, 36)
+                    Size = UDim2.new(0, 0, 0, 38)
                 }):Play()
                 task.delay(0.2, function()
                     if freezeSelfBtn then
