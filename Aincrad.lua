@@ -1,905 +1,1199 @@
--- ╔══════════════════════════════════════════════╗
--- ║         PUTZZDEV | MURDER MYSTERY 2          ║
--- ║   ESP, Coins, Survival, Info                 ║
--- ╚══════════════════════════════════════════════╝
+-- ================== DRIP CLIENT V8.2 PREMIUM (PERFECT KEY SYSTEM) ==================
+-- Perbaikan: Ukuran loading awal diperkecil & warna hitam sedeng elegan
+-- Perbaikan: Hitung mundur setelah key sukses diganti dengan Progress Bar animasi mulus
+-- Penambahan: Sistem key hitung mundur real-time server permanen (Anti-Reset walau keluar game)
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
-local TweenService     = game:GetService("TweenService")
+-- ================== LOAD SERVICES AWAL ==================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local Camera           = workspace.CurrentCamera
-local LocalPlayer      = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
 
--- ================== WARNA ==================
-local C = {
-    bg       = Color3.fromRGB(8,   10,  18),
-    panel    = Color3.fromRGB(14,  17,  28),
-    card     = Color3.fromRGB(20,  24,  38),
-    border   = Color3.fromRGB(40,  48,  70),
-    text     = Color3.fromRGB(230, 230, 240),
-    subtext  = Color3.fromRGB(120, 130, 160),
-    white    = Color3.fromRGB(255, 255, 255),
-    accent   = Color3.fromRGB(220, 50,  50),
-    accentB  = Color3.fromRGB(50,  150, 255),
-    accentG  = Color3.fromRGB(50,  220, 120),
-    accentY  = Color3.fromRGB(255, 210, 50),
-    murderer = Color3.fromRGB(255, 50,  50),
-    sheriff  = Color3.fromRGB(50,  150, 255),
-    innocent = Color3.fromRGB(50,  220, 120),
-    coin     = Color3.fromRGB(255, 210, 50),
-}
-
--- ================== STATE ==================
-local espEnabled        = false
-local gunESPEnabled     = false
-local coinESPEnabled    = false
-local autoCollect       = false
-local highlightMurder   = false
-local highlightSheriff  = false
-local notifMurderer     = false
-local autoDodge         = false
-local autoPickupGun     = false
-local lastNotifTime     = 0
-
-local collectConn  = nil
-local notifConn    = nil
-local dodgeConn    = nil
-local pickupConn   = nil
-local gunESPConn   = nil
-
--- ================== ROLE DETECTION ==================
-local function getRole(player)
-    local rv = player:FindFirstChild("Role")
-    if rv and rv:IsA("StringValue") then return rv.Value end
-    if player.Character then
-        if player.Character:FindFirstChild("Knife") then return "Murderer" end
-        if player.Character:FindFirstChild("Gun")   then return "Sheriff"  end
+-- ================== DETEKSI NAMA EXECUTOR ==================
+local function detectExecutor()
+    local executorName = "Unknown Executor"
+    local executors = {
+        {name = "Delta", check = function() return syn and syn.request and syn.crypt end},
+        {name = "Arceus X", check = function() return game:GetService("CoreGui"):FindFirstChild("Arceus X V2") or (identifyexecutor and identifyexecutor() == "Arceus X") end},
+        {name = "CodeX", check = function() return CodeX and CodeX.Execute end},
+        {name = "Hydrogen", check = function() return isfile and readfile and writefile and (not syn) end},
+        {name = "Fluxus", check = function() return fluxus and fluxus.ismobile end},
+        {name = "Krnl", check = function() return krnl and krnl.loadlibrary end},
+        {name = "ScriptWare", check = function() return scriptware and scriptware.loader end},
+        {name = "Synapse X", check = function() return syn and syn.crypt and syn.request end},
+        {name = "Evon", check = function() return evon and evon.execute end},
+        {name = "Vega X", check = function() return game:GetService("CoreGui"):FindFirstChild("Vega Hub") end},
+        {name = "Swift", check = function() return Swift and Swift.Execute end},
+        {name = "Nexus", check = function() return Nexus and Nexus.Load end}
+    }
+    for _, exec in ipairs(executors) do
+        local success, result = pcall(exec.check)
+        if success and result then executorName = exec.name break end
     end
-    local bp = player:FindFirstChild("Backpack")
-    if bp then
-        if bp:FindFirstChild("Knife") then return "Murderer" end
-        if bp:FindFirstChild("Gun")   then return "Sheriff"  end
+    local success, idName = pcall(function() if identifyexecutor then return identifyexecutor() end return nil end)
+    if success and idName and idName ~= "" then executorName = idName end
+    return executorName
+end
+
+local userExecutor = detectExecutor()
+
+-- ================== GLOBAL STATE & FILE SAVING SYSTEM ==================
+local FIREBASE_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
+local WEBSITE_URL = "https://drip-client-get-key.vercel.app/"
+local SAVE_FILE = "drip_key_data.txt"
+
+local activeKeys = {}
+local currentUserKey = nil
+local keyExpiryTime = 0
+local keyJenis = ""
+local keyValidGlobal = false
+local infoKeyCountdownLabel = nil -- Digunakan untuk update text di tab info secara real-time
+
+local function loadKeyData()
+    if isfile and isfile(SAVE_FILE) then
+        local success, content = pcall(function() return readfile(SAVE_FILE) end)
+        if success and content and content ~= "" then
+            local success2, data = pcall(function() return HttpService:JSONDecode(content) end)
+            if success2 then activeKeys = data end
+        end
     end
-    return "Innocent"
 end
 
-local function getRoleColor(player)
-    local role = getRole(player)
-    if role == "Murderer" then return C.murderer, "☠"
-    elseif role == "Sheriff" then return C.sheriff, "⭐"
-    else return C.innocent, "" end
-end
-
--- ================== DRAWING HELPER ==================
-local function newLine(color)
-    local l = Drawing.new("Line")
-    l.Thickness = 1.5; l.Color = color; l.Visible = false
-    return l
-end
-local function newBox(color)
-    local b = Drawing.new("Square")
-    b.Thickness = 1.8; b.Color = color; b.Filled = false; b.Visible = false
-    return b
-end
-local function newText(color, size)
-    local t = Drawing.new("Text")
-    t.Size = size or 13; t.Color = color; t.Center = true
-    t.Outline = true; t.OutlineColor = Color3.fromRGB(0,0,0); t.Visible = false
-    return t
-end
-
--- ================== ESP PLAYER ==================
-local espLines, espBoxes, espNames = {}, {}, {}
-
-local function initESP(p)
-    if p == LocalPlayer then return end
-    espLines[p] = newLine(C.innocent)
-    espBoxes[p] = newBox(C.innocent)
-    espNames[p] = newText(C.white, 13)
-end
-local function removeESP(p)
-    if espLines[p] then espLines[p]:Remove(); espLines[p] = nil end
-    if espBoxes[p] then espBoxes[p]:Remove(); espBoxes[p] = nil end
-    if espNames[p] then espNames[p]:Remove(); espNames[p] = nil end
-end
-for _, p in pairs(Players:GetPlayers()) do initESP(p) end
-Players.PlayerAdded:Connect(initESP)
-Players.PlayerRemoving:Connect(removeESP)
-
--- ================== HIGHLIGHT SYSTEM ==================
-local playerHighlights = {}
-
-local function clearHighlights()
-    for _, hl in pairs(playerHighlights) do
-        pcall(function() hl:Destroy() end)
+local function saveKeyData()
+    if writefile then
+        local success, json = pcall(function() return HttpService:JSONEncode(activeKeys) end)
+        if success then writefile(SAVE_FILE, json) end
     end
-    playerHighlights = {}
 end
 
-local function updateHighlights()
-    clearHighlights()
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local role = getRole(p)
-            local show = (role == "Murderer" and highlightMurder) or (role == "Sheriff" and highlightSheriff)
-            if show then
-                local hl = Instance.new("Highlight")
-                hl.FillColor           = role == "Murderer" and C.murderer or C.sheriff
-                hl.FillTransparency    = 0.35
-                hl.OutlineColor        = role == "Murderer" and Color3.fromRGB(255,100,100) or Color3.fromRGB(100,180,255)
-                hl.OutlineTransparency = 0
-                hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
-                hl.Enabled             = true
-                hl.Parent              = p.Character
-                playerHighlights[p]    = hl
+local function getKeysFromFirebase()
+    local success, data = pcall(function() return game:HttpGet(FIREBASE_URL) end)
+    if success and data then
+        local success2, jsonData = pcall(function() return HttpService:JSONDecode(data) end)
+        if success2 and jsonData then
+            local keysArray = {}
+            for _, keyData in pairs(jsonData) do table.insert(keysArray, keyData) end
+            return keysArray
+        end
+    end
+    return nil
+end
+
+local function getTimeRemaining(expiryTimestamp)
+    local currentTime = os.time()
+    local remaining = expiryTimestamp - currentTime
+    if remaining <= 0 then return 0, 0, 0, 0, "EXPIRED" end
+    local days = math.floor(remaining / 86400)
+    local hours = math.floor((remaining % 86400) / 3600)
+    local minutes = math.floor((remaining % 3600) / 60)
+    local seconds = remaining % 60
+    return days, hours, minutes, seconds, string.format("%d Hari %02d Jam %02d Menit %02d Detik", days, hours, minutes, seconds)
+end
+
+local function checkKeyExpiry(inputKey)
+    loadKeyData()
+    local keysData = getKeysFromFirebase()
+    if not keysData then return false, "Gagal mengambil data server" end
+    
+    local foundKey, expiryDays, keyJenisData = nil, nil, nil
+    for _, keyData in ipairs(keysData) do
+        if keyData.key == inputKey then
+            foundKey = keyData.key
+            keyJenisData = keyData.jenis or "1 HARI"
+            if keyData.jenis == "1 JAM" then expiryDays = 1/24
+            elseif keyData.jenis == "1 HARI" then expiryDays = 1
+            elseif keyData.jenis == "2 HARI" then expiryDays = 2
+            elseif keyData.jenis == "3 HARI" then expiryDays = 3
+            elseif keyData.jenis == "7 HARI" then expiryDays = 7
+            elseif keyData.jenis == "30 HARI" then expiryDays = 30
+            elseif keyData.jenis == "PERMANEN" then expiryDays = 9999999
+            else expiryDays = 1 end
+            break
+        end
+    end
+    
+    if not foundKey then return false, "KEY TIDAK TERDAFTAR!" end
+    local currentTime = os.time()
+    local expiryTime = nil
+    
+    -- SYSTEM ANTI-RESET PERMANEN: Cek apakah key ini pernah dipakai sebelumnya di device ini
+    if activeKeys[inputKey] and activeKeys[inputKey].expiryTime then
+        expiryTime = activeKeys[inputKey].expiryTime
+        if currentTime > expiryTime then return false, "KEY SUDAH EXPIRED!" end
+    else
+        -- Jika pemakaian pertama kali, hitung waktu kedaluwarsa mutlak dari sekarang dan simpan permanen
+        expiryTime = currentTime + (expiryDays * 86400)
+        activeKeys[inputKey] = {
+            firstUsed = currentTime, key = inputKey, expiryDays = expiryDays,
+            expiryTime = expiryTime, jenis = keyJenisData
+        }
+        saveKeyData()
+    end
+    
+    keyExpiryTime = expiryTime
+    keyJenis = keyJenisData
+    currentUserKey = inputKey
+    keyValidGlobal = true
+    
+    local _, _, _, _, timeStr = getTimeRemaining(expiryTime)
+    return true, "VALID! Sisa: " .. timeStr
+end
+
+-- Loading screen dihapus
+
+-- ================== VARIABEL FITUR CHEAT ==================
+local espEnabled = false
+local lineEnabled = false
+local lineColor = Color3.fromRGB(0, 0, 0)
+local skeletonEnabled = false
+local ESPTable = {}
+local SkeletonESP = {}
+
+local playerCounterEnabled = false
+local enemyCountText = nil
+
+local flyEnabled = false
+local flyConnection = nil
+local flySpeed = 100
+local flyAutoForward = true
+local ctrl = {f = 0, b = 0, l = 0, r = 0}
+local speed = 0
+local flyTorso = nil
+
+local noclipEnabled = false
+local noclipConnection = nil
+
+local speedEnabled = false
+local normalSpeed = 16
+local fastSpeed = 60
+
+local jumpPowerEnabled = false
+local jumpPowerValue = 50 
+local infinityJumpEnabled = false
+
+local antiDamageEnabled = false
+local antiDamageHeartbeat = nil
+
+local spinEnabled = false
+local spinSpeed = 50
+local spinConnection = nil
+local spinDirection = 1
+
+local invisibleEnabled = false
+local invisibleConnection = nil
+local invisibleParts = {}
+local invisibleRootPart = nil
+local invisibleHumanoid = nil
+
+local themeColor = Color3.fromRGB(156, 39, 176)
+local darkPurple = Color3.fromRGB(18, 14, 24) -- Disesuaikan agar warna tidak terlalu terang mencolok
+local boxColor = Color3.fromRGB(0, 0, 0)
+local skeletonColor = Color3.fromRGB(0, 255, 0)
+local redColor = Color3.fromRGB(255, 0, 0)
+local MAX_ESP_DISTANCE = 200000
+
+local function showNotification(title, text, duration, color)
+    local parentGui = game.CoreGui:FindFirstChild("DripClient") or game.CoreGui:FindFirstChild("DripKeySystem")
+    if not parentGui then return end
+    local notif = Instance.new("Frame", parentGui)
+    notif.Size = UDim2.new(0, 260, 0, 50)
+    notif.Position = UDim2.new(0.5, -130, 0, -60)
+    notif.BackgroundColor3 = color or Color3.fromRGB(30, 30, 40)
+    notif.BorderSizePixel = 0
+    notif.ZIndex = 9999
+    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 8)
+
+    local notifTitle = Instance.new("TextLabel", notif)
+    notifTitle.Size = UDim2.new(1, 0, 0.4, 0)
+    notifTitle.Position = UDim2.new(0, 0, 0, 4)
+    notifTitle.BackgroundTransparency = 1
+    notifTitle.Text = title
+    notifTitle.TextColor3 = Color3.new(1, 1, 1)
+    notifTitle.Font = Enum.Font.GothamBold
+    notifTitle.TextSize = 13
+
+    local notifText = Instance.new("TextLabel", notif)
+    notifText.Size = UDim2.new(1, -10, 0.5, 0)
+    notifText.Position = UDim2.new(0, 5, 0, 22)
+    notifText.BackgroundTransparency = 1
+    notifText.Text = text
+    notifText.TextColor3 = Color3.fromRGB(200, 200, 200)
+    notifText.Font = Enum.Font.Gotham
+    notifText.TextSize = 11
+
+    TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(0.5, -130, 0, 20)}):Play()
+    task.wait(duration or 2)
+    TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Position = UDim2.new(0.5, -130, 0, -60)}):Play()
+    task.wait(0.3)
+    notif:Destroy()
+end
+
+-- ================== ENGINE ACTIONS (FLY, SPEED, DLL) ==================
+local function startFlyMode()
+    local plr = LocalPlayer
+    if not plr.Character then return end
+    flyTorso = plr.Character:FindFirstChild("UpperTorso") or plr.Character:FindFirstChild("Torso") or plr.Character:FindFirstChild("HumanoidRootPart")
+    if not flyTorso then return end
+    ctrl = {f = 0, b = 0, l = 0, r = 0}
+    speed = 0
+    if plr.Character:FindFirstChildOfClass("Humanoid") then plr.Character:FindFirstChildOfClass("Humanoid").PlatformStand = true end
+    
+    local flyBodyGyro = Instance.new("BodyGyro", flyTorso)
+    flyBodyGyro.Name = "FlyBG"
+    flyBodyGyro.P = 9e4
+    flyBodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+
+    local flyBodyVelocity = Instance.new("BodyVelocity", flyTorso)
+    flyBodyVelocity.Name = "FlyBV"
+    flyBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+
+    local lastctrl = {f = 0, b = 0, l = 0, r = 0}
+
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not flyEnabled or not plr.Character or not flyTorso:IsDescendantOf(workspace) then return end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then ctrl.f = 1 else ctrl.f = 0 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then ctrl.b = -1 else ctrl.b = 0 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then ctrl.l = -1 else ctrl.l = 0 end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then ctrl.r = 1 else ctrl.r = 0 end
+        
+        local forwardInput = (flyAutoForward and ctrl.f == 0 and ctrl.b == 0) and 1 or (ctrl.f + ctrl.b)
+        if forwardInput ~= 0 or ctrl.l + ctrl.r ~= 0 then
+            speed = math.min(speed + 1.5, flySpeed)
+            local camCF = Camera.CFrame
+            flyBodyVelocity.Velocity = ((camCF.LookVector * forwardInput) + (camCF.RightVector * (ctrl.l + ctrl.r))).Unit * speed
+        else
+            speed = math.max(speed - 2, 0)
+            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
+        end
+        flyBodyGyro.CFrame = Camera.CFrame
+    end)
+end
+
+local function stopFlyMode()
+    flyEnabled = false
+    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    local char = LocalPlayer.Character
+    if char then
+        if char:FindFirstChildOfClass("Humanoid") then char:FindFirstChildOfClass("Humanoid").PlatformStand = false end
+        local t = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+        if t then
+            if t:FindFirstChild("FlyBV") then t.FlyBV:Destroy() end
+            if t:FindFirstChild("FlyBG") then t.FlyBG:Destroy() end
+        end
+    end
+end
+
+local function startNoclip()
+    if noclipConnection then noclipConnection:Disconnect() end
+    noclipConnection = RunService.Stepped:Connect(function()
+        if noclipEnabled and LocalPlayer.Character then
+            for _, p in pairs(LocalPlayer.Character:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
             end
-        end
-    end
-end
-
--- ================== GUN ESP ==================
-local gunHighlights = {}
-
-local function updateGunESP(enabled)
-    for _, hl in pairs(gunHighlights) do pcall(function() hl:Destroy() end) end
-    gunHighlights = {}
-    if not enabled then return end
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Tool") and (obj.Name == "Gun" or obj.Name:lower():find("gun")) then
-            local hl = Instance.new("Highlight")
-            hl.FillColor           = C.coin
-            hl.FillTransparency    = 0.3
-            hl.OutlineColor        = Color3.fromRGB(255,255,100)
-            hl.OutlineTransparency = 0
-            hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
-            hl.Enabled             = true
-            hl.Parent              = obj
-            table.insert(gunHighlights, hl)
-        end
-    end
-end
-
--- ================== COIN ESP ==================
-local coinData = {}
-
-local function initCoinESP()
-    for _, d in pairs(coinData) do
-        pcall(function() d.label:Remove() end)
-        pcall(function() if d.hl then d.hl:Destroy() end end)
-    end
-    coinData = {}
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and (obj.Name == "Coin" or obj.Name:lower() == "coin") then
-            local hl = Instance.new("Highlight")
-            hl.FillColor = C.coin; hl.FillTransparency = 0.3
-            hl.OutlineColor = Color3.fromRGB(255,255,100); hl.OutlineTransparency = 0
-            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            hl.Enabled = false; hl.Parent = obj
-            local lbl = newText(C.coin, 12)
-            table.insert(coinData, {obj = obj, hl = hl, label = lbl})
-        end
-    end
-end
-initCoinESP()
-
--- ================== AUTO FARM COIN ==================
-local function startAutoCollect()
-    if collectConn then collectConn:Disconnect() end
-    task.spawn(function()
-        while autoCollect do
-            local myChar = LocalPlayer.Character
-            local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
-            if myHRP and hum then
-                local nearest, nearestDist = nil, math.huge
-                for _, d in pairs(coinData) do
-                    if d.obj and d.obj.Parent then
-                        local dist = (myHRP.Position - d.obj.Position).Magnitude
-                        if dist < nearestDist then nearestDist = dist; nearest = d.obj end
-                    end
-                end
-                -- Fallback scan
-                if not nearest then
-                    for _, obj in pairs(workspace:GetDescendants()) do
-                        if obj:IsA("BasePart") and (obj.Name == "Coin" or obj.Name:lower() == "coin") then
-                            local dist = (myHRP.Position - obj.Position).Magnitude
-                            if dist < nearestDist then nearestDist = dist; nearest = obj end
-                        end
-                    end
-                end
-                if nearest and nearestDist > 3 then
-                    hum:MoveTo(nearest.Position)
-                end
-            end
-            task.wait(0.6)
         end
     end)
 end
 
--- ================== AUTO DODGE ==================
-local function startAutoDodge()
-    if dodgeConn then dodgeConn:Disconnect() end
-    dodgeConn = RunService.Heartbeat:Connect(function()
-        if not autoDodge then return end
-        local myChar = LocalPlayer.Character
-        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myHRP then return end
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and not obj.Anchored then
-                local name = obj.Name:lower()
-                if name:find("knife") or name:find("throw") or name:find("blade") then
-                    local vel  = obj.AssemblyLinearVelocity
-                    local dist = (myHRP.Position - obj.Position).Magnitude
-                    if vel.Magnitude > 5 and dist < 18 then
-                        local toMe = (myHRP.Position - obj.Position).Unit
-                        if vel.Unit:Dot(toMe) > 0.6 then
-                            local dirs = {Vector3.new(10,2,0), Vector3.new(-10,2,0), Vector3.new(0,2,10), Vector3.new(0,2,-10)}
-                            local pick = dirs[math.random(1,#dirs)]
-                            myHRP.CFrame = CFrame.new(myHRP.Position + pick)
-                        end
+local function stopNoclip() if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end end
+
+local function toggleSpin(state)
+    spinEnabled = state
+    if spinConnection then spinConnection:Disconnect() spinConnection = nil end
+    if state then
+        spinConnection = RunService.Heartbeat:Connect(function()
+            if spinEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame *= CFrame.Angles(0, math.rad(spinSpeed * spinDirection), 0)
+            end
+        end)
+    end
+end
+
+local function toggleInvisible(state)
+    invisibleEnabled = state
+    if invisibleConnection then invisibleConnection:Disconnect() invisibleConnection = nil end
+    if state and LocalPlayer.Character then
+        -- Reset dulu invisibleParts sebelum isi ulang
+        invisibleParts = {}
+        invisibleRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        invisibleHumanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+            if v:IsA("BasePart") and v.Transparency == 0 then
+                table.insert(invisibleParts, {part = v, origTrans = v.Transparency})
+                v.Transparency = 0.5
+            end
+        end
+        invisibleConnection = RunService.Heartbeat:Connect(function()
+            if invisibleEnabled and invisibleRootPart and invisibleHumanoid then
+                local oldCF = invisibleRootPart.CFrame
+                local oldOffset = invisibleHumanoid.CameraOffset
+                local hideCF = oldCF * CFrame.new(0, -500000, 0)
+                invisibleRootPart.CFrame = hideCF
+                invisibleHumanoid.CameraOffset = hideCF:ToObjectSpace(CFrame.new(oldCF.Position)).Position
+                RunService.RenderStepped:Wait()
+                invisibleRootPart.CFrame = oldCF
+                invisibleHumanoid.CameraOffset = oldOffset
+            end
+        end)
+    else
+        -- Kembalikan transparency ke nilai asli masing-masing part
+        if LocalPlayer.Character then
+            for _, data in pairs(invisibleParts) do
+                pcall(function()
+                    if data.part and data.part.Parent then
+                        data.part.Transparency = data.origTrans
                     end
+                end)
+            end
+            -- Fallback: semua part yang masih transparan dikembalikan ke 0
+            for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+                if v:IsA("BasePart") and v.Transparency == 0.5 then
+                    v.Transparency = 0
                 end
             end
         end
-        -- Dodge dari murderer throw
+        invisibleParts = {}
+        invisibleRootPart = nil
+        invisibleHumanoid = nil
+    end
+end
+
+-- ================== GOD MODE PERMANEN (BENERAN KEBAL) ==================
+-- Fungsi setupAntiDamage yang ditingkatkan dengan multiple connections dan custom Disconnect
+local function setupAntiDamage()
+    -- Hapus semua koneksi sebelumnya jika ada
+    if antiDamageHeartbeat then
+        if type(antiDamageHeartbeat) == "table" and antiDamageHeartbeat._disconnect then
+            antiDamageHeartbeat:_disconnect()
+        elseif antiDamageHeartbeat.Disconnect then
+            antiDamageHeartbeat:Disconnect()
+        end
+        antiDamageHeartbeat = nil
+    end
+    
+    -- Kumpulan koneksi yang akan dikelola
+    local connections = {}
+    
+    -- Fungsi untuk membuat karakter kebal
+    local function makeInvincible()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        
+        hum.Health = hum.MaxHealth
+        hum.BreakJointsOnDeath = false
+        
+        -- Hentikan koneksi HealthChanged sebelumnya jika ada
+        if hum._godHealthConn then
+            hum._godHealthConn:Disconnect()
+            hum._godHealthConn = nil
+        end
+        
+        -- Pasang HealthChanged untuk respon instan
+        local healthConn = hum.HealthChanged:Connect(function(newHealth)
+            if antiDamageEnabled and newHealth < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
+        end)
+        hum._godHealthConn = healthConn
+        table.insert(connections, healthConn)
+    end
+    
+    -- Heartbeat untuk cadangan (jika HealthChanged gagal)
+    local hbConn = RunService.Heartbeat:Connect(function()
+        if antiDamageEnabled and LocalPlayer.Character then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
+        end
+    end)
+    table.insert(connections, hbConn)
+    
+    -- Terapkan ke karakter saat ini
+    makeInvincible()
+    
+    -- Event ketika karakter berganti (respawn)
+    local charConn = LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(0.2) -- tunggu humanoid tersedia
+        if antiDamageEnabled then
+            makeInvincible()
+        end
+    end)
+    table.insert(connections, charConn)
+    
+    -- Buat objek dengan metode Disconnect untuk kompatibilitas dengan toggle lama
+    local godModeObject = {}
+    function godModeObject:Disconnect()
+        for _, conn in ipairs(connections) do
+            pcall(function() conn:Disconnect() end)
+        end
+        connections = {}
+        if LocalPlayer.Character then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum._godHealthConn then
+                hum._godHealthConn:Disconnect()
+                hum._godHealthConn = nil
+            end
+        end
+    end
+    function godModeObject:_disconnect() self:Disconnect() end
+    
+    antiDamageHeartbeat = godModeObject
+end
+
+UserInputService.JumpRequest:Connect(function()
+    if infinityJumpEnabled and LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and jumpPowerEnabled then
+            hum.UseJumpPower = true
+            hum.JumpPower = jumpPowerValue
+        end
+    end
+end)
+
+-- ================== ESP SYSTEM DRAWINGS ==================
+local function createPlayerCounter()
+    if enemyCountText then pcall(function() enemyCountText:Remove() end) end
+    enemyCountText = Drawing.new("Text")
+    enemyCountText.Size = 22
+    enemyCountText.Color = redColor
+    enemyCountText.Center = true
+    enemyCountText.Outline = true
+    enemyCountText.Position = Vector2.new(Camera.ViewportSize.X / 2, 55)
+    enemyCountText.Visible = false
+    enemyCountText.Text = "PLAYERS: 0"
+end
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+    local box = Drawing.new("Square") box.Thickness = 1.8 box.Filled = false box.Visible = false
+    local name = Drawing.new("Text") name.Size = 13 name.Center = true name.Outline = true name.Visible = false
+    local dist = Drawing.new("Text") dist.Size = 11 dist.Center = true dist.Outline = true dist.Visible = false
+    local line = Drawing.new("Line") line.Thickness = 1.8 line.Visible = false
+    local healthBg = Drawing.new("Square") healthBg.Filled = true healthBg.Visible = false
+    local healthFg = Drawing.new("Square") healthFg.Filled = true healthFg.Visible = false
+    ESPTable[player] = {box, name, dist, line, healthBg, healthFg}
+end
+
+local function createSkeleton(player)
+    if player == LocalPlayer then return end
+    local lines = {}
+    local joints = {
+        {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"},
+        {"UpperTorso", "LeftUpperArm"}, {"LeftUpperArm", "LeftLowerArm"},
+        {"UpperTorso", "RightUpperArm"}, {"RightUpperArm", "RightLowerArm"},
+        {"LowerTorso", "LeftUpperLeg"}, {"LeftUpperLeg", "LeftLowerLeg"},
+        {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}
+    }
+    for i=1, #joints do
+        local l = Drawing.new("Line") l.Thickness = 2 l.Color = skeletonColor l.Visible = false
+        table.insert(lines, {l, joints[i][1], joints[i][2]})
+    end
+    SkeletonESP[player] = lines
+end
+
+RunService.RenderStepped:Connect(function()
+    local myChar = LocalPlayer.Character
+    local myPos = myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar.HumanoidRootPart.Position
+    local screenCount = 0
+
+    for player, esp in pairs(ESPTable) do
+        local box, name, distText, line, hBg, hFg = unpack(esp)
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+            local hrp = char.HumanoidRootPart
+            local head = char.Head
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local pos, visible = Camera:WorldToViewportPoint(hrp.Position)
+            local distance = myPos and (myPos - hrp.Position).Magnitude or 9999
+            
+            if visible and distance <= MAX_ESP_DISTANCE then
+                screenCount = screenCount + 1
+                local top = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local bottom = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                local height = math.abs(top.Y - bottom.Y)
+                local width = height / 2
+
+                if espEnabled then
+                    box.Size = Vector2.new(width, height)
+                    box.Position = Vector2.new(pos.X - width/2, top.Y)
+                    box.Color = boxColor
+                    box.Visible = true
+
+                    name.Position = Vector2.new(pos.X, top.Y - 15)
+                    name.Text = player.DisplayName or player.Name
+                    name.Visible = true
+
+                    distText.Text = math.floor(distance).."m"
+                    distText.Position = Vector2.new(pos.X, bottom.Y + 3)
+                    distText.Visible = true
+
+                    if hum then
+                        local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                        hBg.Size = Vector2.new(4, height)
+                        hBg.Position = Vector2.new(pos.X + width/2 + 3, top.Y)
+                        hBg.Color = Color3.fromRGB(40,40,40)
+                        hBg.Visible = true
+
+                        hFg.Size = Vector2.new(4, height * pct)
+                        hFg.Position = Vector2.new(pos.X + width/2 + 3, bottom.Y - (height * pct))
+                        hFg.Color = Color3.fromRGB(255 * (1-pct), 255 * pct, 0)
+                        hFg.Visible = true
+                    end
+                else
+                    box.Visible = false name.Visible = false distText.Visible = false hBg.Visible = false hFg.Visible = false
+                end
+            else
+                box.Visible = false name.Visible = false distText.Visible = false hBg.Visible = false hFg.Visible = false
+            end
+
+            if lineEnabled and visible then
+                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                line.To = Vector2.new(pos.X, pos.Y)
+                line.Color = lineColor
+                line.Visible = true
+            else
+                line.Visible = false
+            end
+        end
+    end
+
+    if skeletonEnabled then
+        for player, lines in pairs(SkeletonESP) do
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and myPos then
+                for _, lData in pairs(lines) do
+                    local l, p1, p2 = lData[1], char:FindFirstChild(lData[2]), char:FindFirstChild(lData[3])
+                    if p1 and p2 then
+                        local pos1, vis1 = Camera:WorldToViewportPoint(p1.Position)
+                        local pos2, vis2 = Camera:WorldToViewportPoint(p2.Position)
+                        if vis1 and vis2 then
+                            l.From = Vector2.new(pos1.X, pos1.Y)
+                            l.To = Vector2.new(pos2.X, pos2.Y)
+                            l.Visible = true
+                        else l.Visible = false end
+                    else l.Visible = false end
+                end
+            else
+                for _, ld in pairs(lines) do ld[1].Visible = false end
+            end
+        end
+    else
+        for _, lines in pairs(SkeletonESP) do for _, ld in pairs(lines) do ld[1].Visible = false end end
+    end
+
+    if playerCounterEnabled and enemyCountText then
+        enemyCountText.Text = "PLAYERS: " .. screenCount
+        enemyCountText.Visible = true
+    elseif enemyCountText then
+        enemyCountText.Visible = false
+    end
+end)
+
+-- LOOP PERMANEN UPDATE COUNTDOWN KEY DI TAB INFORMASI
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if keyValidGlobal and keyExpiryTime > 0 and infoKeyCountdownLabel then
+            local _, _, _, _, timeStr = getTimeRemaining(keyExpiryTime)
+            if os.time() > keyExpiryTime then
+                infoKeyCountdownLabel.Text = "Status Key: EXPIRED! (Harap ganti key)"
+                infoKeyCountdownLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+            else
+                infoKeyCountdownLabel.Text = "Sisa Durasi: " .. timeStr
+            end
+        end
+    end
+end)
+
+-- ================== LOAD MAIN CHEAT INTERFACE ==================
+local function loadMainScript()
+    if game.CoreGui:FindFirstChild("DripKeySystem") then game.CoreGui.DripKeySystem:Destroy() end
+    createPlayerCounter()
+    
+    local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+    ScreenGui.Name = "DripClient"
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local mainFrame = Instance.new("Frame", ScreenGui)
+    mainFrame.Size = UDim2.new(0, 390, 0, 480)
+    mainFrame.Position = UDim2.new(0.5, -195, 0.5, -240)
+    mainFrame.BackgroundColor3 = darkPurple
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 16)
+    
+    local mainStroke = Instance.new("UIStroke", mainFrame)
+    mainStroke.Color = themeColor
+    mainStroke.Thickness = 2
+
+    local header = Instance.new("Frame", mainFrame)
+    header.Size = UDim2.new(1, 0, 0, 60)
+    header.BackgroundColor3 = themeColor
+    header.BackgroundTransparency = 0.3
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
+    
+    local title = Instance.new("TextLabel", header)
+    title.Size = UDim2.new(1, -30, 0.5, 0)
+    title.Position = UDim2.new(0, 20, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "DRIP CLIENT PREMIUM"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 18
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local subtitle = Instance.new("TextLabel", header)
+    subtitle.Size = UDim2.new(1, -30, 0.3, 0)
+    subtitle.Position = UDim2.new(0, 20, 0, 34)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "Status: Terautentikasi Aman Server"
+    subtitle.TextColor3 = Color3.fromRGB(0, 255, 120)
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextSize = 11
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+
+    local tabBar = Instance.new("Frame", mainFrame)
+    tabBar.Size = UDim2.new(0.94, 0, 0, 35)
+    tabBar.Position = UDim2.new(0.03, 0, 0, 70)
+    tabBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 6)
+
+    local tabs, contents = {}, {}
+    local function createTab(name, idx)
+        local btn = Instance.new("TextButton", tabBar)
+        btn.Size = UDim2.new(0.25, -2, 1, -6)
+        btn.Position = UDim2.new((idx-1)*0.25, 2, 0, 3)
+        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        btn.BackgroundTransparency = 0.5
+        btn.Text = name
+        btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 10
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+        
+        local content = Instance.new("ScrollingFrame", mainFrame)
+        content.Size = UDim2.new(0.94, 0, 0, 350)
+        content.Position = UDim2.new(0.03, 0, 0, 115)
+        content.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+        content.BackgroundTransparency = 0.4
+        content.BorderSizePixel = 0
+        content.ScrollBarThickness = 4
+        content.ScrollBarImageColor3 = themeColor
+        content.Visible = false
+        content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        content.ScrollingDirection = Enum.ScrollingDirection.Y
+        
+        local layout = Instance.new("UIListLayout", content)
+        layout.Padding = UDim.new(0, 6)
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
+        table.insert(tabs, btn) table.insert(contents, content)
+        
+        btn.MouseButton1Click:Connect(function()
+            for i, b in ipairs(tabs) do b.TextColor3 = Color3.fromRGB(180, 180, 180) b.BackgroundTransparency = 0.5 contents[i].Visible = false end
+            btn.TextColor3 = Color3.new(1,1,1) btn.BackgroundTransparency = 0.1 content.Visible = true
+        end)
+        return content
+    end
+    
+    local tabMain = createTab("MAIN", 1)
+    local tabESP = createTab("ESP SYSTEM", 2)
+    local tabUtility = createTab("UTILITY", 3)
+    local tabInfo = createTab("INFO", 4)
+
+    local function createToggle(parent, text, default, callback)
+        local frame = Instance.new("Frame", parent) frame.Size = UDim2.new(0.95, 0, 0, 38) frame.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        local label = Instance.new("TextLabel", frame) label.Size = UDim2.new(0.65, 0, 1, 0) label.Position = UDim2.new(0.05, 0, 0, 0) label.BackgroundTransparency = 1 label.Text = text label.TextColor3 = Color3.new(1,1,1) label.Font = Enum.Font.Gotham label.TextSize = 12 label.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local switch = Instance.new("Frame", frame) switch.Size = UDim2.new(0, 40, 0, 20) switch.Position = UDim2.new(0.83, 0, 0.5, -10) switch.BackgroundColor3 = default and themeColor or Color3.fromRGB(70, 70, 80)
+        Instance.new("UICorner", switch).CornerRadius = UDim.new(0, 10)
+        local circle = Instance.new("Frame", switch) circle.Size = UDim2.new(0, 16, 0, 16) circle.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0.05, 0, 0.5, -8) circle.BackgroundColor3 = Color3.new(1,1,1)
+        Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+        
+        local state = default
+        local click = Instance.new("TextButton", frame) click.Size = UDim2.new(1, 0, 1, 0) click.BackgroundTransparency = 1 click.Text = ""
+        click.MouseButton1Click:Connect(function()
+            state = not state
+            TweenService:Create(switch, TweenInfo.new(0.18), {BackgroundColor3 = state and themeColor or Color3.fromRGB(70, 70, 80)}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.18), {Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0.05, 0, 0.5, -8)}):Play()
+            callback(state)
+        end)
+    end
+
+    createToggle(tabMain, "Fly Mode", false, function(s) flyEnabled = s if s then startFlyMode() else stopFlyMode() end end)
+    createToggle(tabMain, "Speed Boost", false, function(s) speedEnabled = s local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") if hum then hum.WalkSpeed = s and fastSpeed or normalSpeed end end)
+    createToggle(tabMain, "NoClip", false, function(s) noclipEnabled = s if s then startNoclip() else stopNoclip() end end)
+    createToggle(tabMain, "Infinity Jump", false, function(s) infinityJumpEnabled = s end)
+    createToggle(tabMain, "God Mode", false, function(s)
+        antiDamageEnabled = s
+        if s then
+            setupAntiDamage()
+        else
+            if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect() end
+            antiDamageHeartbeat = nil
+        end
+    end)
+    createToggle(tabMain, "Spin Muter", false, function(s) toggleSpin(s) end)
+    createToggle(tabMain, "Invisible Mode", false, function(s) toggleInvisible(s) end)
+
+    createToggle(tabESP, "ESP Box (Hitam)", false, function(s) espEnabled = s end)
+    createToggle(tabESP, "ESP Line", false, function(s) lineEnabled = s end)
+    createToggle(tabESP, "ESP Skeleton", false, function(s) skeletonEnabled = s end)
+    createToggle(tabESP, "Player Counter", false, function(s) playerCounterEnabled = s end)
+
+    -- TAB UTILITY DROPDOWN TELEPORT
+    local function createTeleportDropdown(parent)
+        local baseFrame = Instance.new("Frame", parent) baseFrame.Size = UDim2.new(0.95, 0, 0, 38) baseFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 55) baseFrame.ClipsDescendants = true
+        Instance.new("UICorner", baseFrame).CornerRadius = UDim.new(0, 6)
+        local mainButton = Instance.new("TextButton", baseFrame) mainButton.Size = UDim2.new(1, 0, 0, 38) mainButton.BackgroundTransparency = 1 mainButton.Text = "TELEPORT KE PLAYER" mainButton.TextColor3 = Color3.new(1,1,1) mainButton.Font = Enum.Font.GothamBold mainButton.TextSize = 12
+        local scrollList = Instance.new("ScrollingFrame", baseFrame) scrollList.Size = UDim2.new(1, 0, 0, 120) scrollList.Position = UDim2.new(0, 0, 0, 38) scrollList.BackgroundTransparency = 1 scrollList.ScrollBarThickness = 4 scrollList.ScrollBarImageColor3 = themeColor
+        local listLayout = Instance.new("UIListLayout", scrollList) listLayout.Padding = UDim.new(0, 4) listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
+        local isOpen = false
+        mainButton.MouseButton1Click:Connect(function()
+            isOpen = not isOpen
+            if isOpen then
+                for _, c in pairs(scrollList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer then
+                        local pBtn = Instance.new("TextButton", scrollList) pBtn.Size = UDim2.new(0.92, 0, 0, 26) pBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40) pBtn.TextColor3 = Color3.fromRGB(230, 230, 230) pBtn.Font = Enum.Font.Gotham pBtn.TextSize = 11 pBtn.Text = plr.DisplayName or plr.Name
+                        Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 4)
+                        pBtn.MouseButton1Click:Connect(function()
+                            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                                LocalPlayer.Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+                                showNotification("TELEPORT", "Teleport ke " .. plr.Name, 2, Color3.fromRGB(0,140,0))
+                            end
+                            isOpen = false TweenService:Create(baseFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.95, 0, 0, 38)}):Play()
+                        end)
+                    end
+                end
+                scrollList.CanvasSize = UDim2.new(0,0,0, listLayout.AbsoluteContentSize.Y + 10)
+                TweenService:Create(baseFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.95, 0, 0, 165)}):Play()
+            else
+                TweenService:Create(baseFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.95, 0, 0, 38)}):Play()
+            end
+        end)
+    end
+    createTeleportDropdown(tabUtility)
+
+    -- ================== FREEZE ALL PLAYERS (VISUAL ONLY) ==================
+    local freezeAllEnabled = false
+    local frozenConnections = {}
+
+    local function freezeAllPlayers(state)
+        freezeAllEnabled = state
+        -- Unfreeze dulu semua
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
-                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local dist = (myHRP.Position - hrp.Position).Magnitude
-                    if dist < 22 and not p.Character:FindFirstChild("Knife") then
-                        local away = (myHRP.Position - hrp.Position).Unit
-                        myHRP.CFrame = CFrame.new(myHRP.Position + Vector3.new(away.X*8, 2, away.Z*8))
+            if p ~= LocalPlayer and p.Character then
+                for _, part in pairs(p.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        pcall(function() part.Anchored = false end)
                     end
                 end
             end
         end
-    end)
-end
-
--- ================== AUTO PICKUP GUN ==================
-local function startAutoPickup()
-    if pickupConn then pickupConn:Disconnect() end
-    task.spawn(function()
-        while autoPickupGun do
-            local myChar = LocalPlayer.Character
-            local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-            local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
-            if myHRP and hum then
-                local nearest, nearestDist = nil, math.huge
-                for _, obj in pairs(workspace:GetDescendants()) do
-                    if obj:IsA("Tool") and (obj.Name == "Gun" or obj.Name:lower():find("gun")) then
-                        local bp = obj.Parent
-                        if bp and not bp:IsA("Model") then
-                            local part = obj:FindFirstChildWhichIsA("BasePart")
-                            if part then
-                                local dist = (myHRP.Position - part.Position).Magnitude
-                                if dist < nearestDist then nearestDist = dist; nearest = part end
+        if state then
+            -- Freeze semua player lain secara client-side
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    for _, part in pairs(p.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            pcall(function() part.Anchored = true end)
+                        end
+                    end
+                end
+            end
+            -- Freeze karakter baru yang spawn
+            Players.PlayerAdded:Connect(function(p)
+                p.CharacterAdded:Connect(function(char)
+                    if freezeAllEnabled then
+                        task.wait(0.5)
+                        for _, part in pairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                pcall(function() part.Anchored = true end)
                             end
                         end
                     end
-                end
-                if nearest and nearestDist > 3 then
-                    hum:MoveTo(nearest.Position)
-                end
-            end
-            task.wait(0.5)
+                end)
+            end)
         end
-    end)
-end
+    end
 
--- ================== MURDER ALERT ==================
-local function startMurderAlert()
-    if notifConn then notifConn:Disconnect() end
-    notifConn = RunService.Heartbeat:Connect(function()
-        if not notifMurderer then return end
+    createToggle(tabUtility, "❄️ Freeze All Player (Visual)", false, function(s)
+        freezeAllPlayers(s)
+        showNotification("FREEZE", s and "Semua player dibekukan!" or "Freeze dinonaktifkan", 2, s and Color3.fromRGB(0,180,255) or Color3.fromRGB(200,200,200))
+    end)
+
+    -- ================== FREEZE DIRI SENDIRI ==================
+    local freezeSelfEnabled = false
+    local freezeSelfBtn = nil
+    local freezeSelfBtnVisible = false
+
+    local function applyFreezeSelf(state)
+        freezeSelfEnabled = state
         local myChar = LocalPlayer.Character
-        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myHRP then return end
-        local now = tick()
-        if now - lastNotifTime < 3 then return end
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
-                local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-                if hrp and (myHRP.Position - hrp.Position).Magnitude < 30 then
-                    lastNotifTime = now
-                    local gui = Instance.new("ScreenGui")
-                    gui.Name = "MurderAlert"; gui.ResetOnSpawn = false
-                    gui.Parent = game:GetService("CoreGui")
-                    local f = Instance.new("Frame", gui)
-                    f.Size = UDim2.new(0, 290, 0, 54)
-                    f.Position = UDim2.new(0.5, -145, 0, 55)
-                    f.BackgroundColor3 = Color3.fromRGB(35,8,8); f.BorderSizePixel = 0
-                    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 12)
-                    local fs = Instance.new("UIStroke", f); fs.Color = C.murderer; fs.Thickness = 2
-                    local fl = Instance.new("TextLabel", f)
-                    fl.Size = UDim2.new(1,0,1,0); fl.BackgroundTransparency = 1
-                    fl.Text = "⚠  MURDERER MENDEKAT!"; fl.TextColor3 = C.murderer
-                    fl.Font = Enum.Font.GothamBold; fl.TextSize = 16
-                    TweenService:Create(f, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
-                        Position = UDim2.new(0.5,-145,0,75)
-                    }):Play()
-                    task.delay(2.5, function() game:GetService("Debris"):AddItem(gui, 0) end)
-                end
-            end
-        end
-    end)
-end
-
--- ================== MAIN RENDER LOOP ==================
-RunService.RenderStepped:Connect(function()
-    local vp     = Camera.ViewportSize
-    local myChar = LocalPlayer.Character
-    local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    local myPos  = myHRP and myHRP.Position
-
-    -- Update highlights
-    if highlightMurder or highlightSheriff then updateHighlights() end
-
-    -- Player ESP
-    for player, line in pairs(espLines) do
-        local char = player.Character
-        local head = char and char:FindFirstChild("Head")
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if espEnabled and head and hrp and myPos then
-            local sp, vis = Camera:WorldToViewportPoint(head.Position)
-            local dist    = math.floor((myPos - hrp.Position).Magnitude)
-            local roleColor, roleIcon = getRoleColor(player)
-            line.Color = roleColor; espBoxes[player].Color = roleColor
-            if vis then
-                line.From = Vector2.new(vp.X/2, vp.Y)
-                line.To   = Vector2.new(sp.X, sp.Y)
-                line.Visible = true
-                local topSP = Camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.7,0))
-                local botSP = Camera:WorldToViewportPoint(hrp.Position  - Vector3.new(0,3,0))
-                local h = math.abs(topSP.Y - botSP.Y); local w = h/2
-                local box = espBoxes[player]
-                box.Size = Vector2.new(w, h); box.Position = Vector2.new(sp.X - w/2, topSP.Y); box.Visible = true
-                local nm = espNames[player]
-                local tag = roleIcon ~= "" and (" " .. roleIcon) or ""
-                nm.Color = roleColor; nm.Position = Vector2.new(sp.X, topSP.Y - 17)
-                nm.Text = player.Name .. tag .. " [" .. dist .. "m]"; nm.Visible = true
-            else
-                line.Visible = false; espBoxes[player].Visible = false; espNames[player].Visible = false
-            end
-        else
-            if espLines[player]  then espLines[player].Visible  = false end
-            if espBoxes[player]  then espBoxes[player].Visible  = false end
-            if espNames[player]  then espNames[player].Visible  = false end
-        end
-    end
-
-    -- Coin ESP
-    for _, d in pairs(coinData) do
-        if d.obj and d.obj.Parent and coinESPEnabled and myPos then
-            local sp, vis = Camera:WorldToViewportPoint(d.obj.Position)
-            local dist    = math.floor((myPos - d.obj.Position).Magnitude)
-            if vis then
-                d.label.Position = Vector2.new(sp.X, sp.Y - 14)
-                d.label.Text     = "💰 [" .. dist .. "m]"
-                d.label.Visible  = true
-                d.hl.Enabled     = true
-            else
-                d.label.Visible = false; d.hl.Enabled = false
-            end
-        else
-            d.label.Visible = false
-            if d.hl then d.hl.Enabled = false end
-        end
-    end
-end)
-
--- ================== UI ==================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "PutzzdevMM2"; ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = game:GetService("CoreGui")
-
--- Main Frame
-local Main = Instance.new("Frame")
-Main.Name = "Main"; Main.Size = UDim2.new(0, 390, 0, 530)
-Main.Position = UDim2.new(0.5, -195, 0.5, -265)
-Main.BackgroundColor3 = C.bg; Main.BorderSizePixel = 0
-Main.ClipsDescendants = true; Main.Parent = ScreenGui
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 14)
-local mainStroke = Instance.new("UIStroke", Main)
-mainStroke.Color = C.accent; mainStroke.Thickness = 1.5
-
--- Header
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 52); Header.BackgroundColor3 = Color3.fromRGB(12,10,20)
-Header.BorderSizePixel = 0; Header.Parent = Main
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 14)
-
-local accentLine = Instance.new("Frame", Header)
-accentLine.Size = UDim2.new(1,0,0,2); accentLine.Position = UDim2.new(0,0,1,-2)
-accentLine.BackgroundColor3 = C.accent; accentLine.BorderSizePixel = 0
-local hg = Instance.new("UIGradient", accentLine)
-hg.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(255,50,50)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255,150,50)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(255,50,50)),
-})
-
-local iconF = Instance.new("Frame", Header)
-iconF.Size = UDim2.new(0,32,0,32); iconF.Position = UDim2.new(0,12,0.5,-16)
-iconF.BackgroundColor3 = C.accent; iconF.BorderSizePixel = 0
-Instance.new("UICorner", iconF).CornerRadius = UDim.new(0,8)
-local iconL = Instance.new("TextLabel", iconF)
-iconL.Size = UDim2.new(1,0,1,0); iconL.BackgroundTransparency = 1
-iconL.Text = "🔪"; iconL.TextSize = 18; iconL.Font = Enum.Font.GothamBold
-
-local titleL = Instance.new("TextLabel", Header)
-titleL.Size = UDim2.new(0.6,0,0,22); titleL.Position = UDim2.new(0,54,0,7)
-titleL.BackgroundTransparency = 1; titleL.Text = "MURDER MYSTERY 2"
-titleL.TextColor3 = C.white; titleL.Font = Enum.Font.GothamBold
-titleL.TextSize = 14; titleL.TextXAlignment = Enum.TextXAlignment.Left
-
-local devL = Instance.new("TextLabel", Header)
-devL.Size = UDim2.new(0.6,0,0,18); devL.Position = UDim2.new(0,54,1,-23)
-devL.BackgroundTransparency = 1; devL.Text = "✦ Putzzdev"
-devL.TextColor3 = Color3.fromRGB(255,160,60); devL.Font = Enum.Font.GothamBold
-devL.TextSize = 13; devL.TextXAlignment = Enum.TextXAlignment.Left
-TweenService:Create(devL, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-    TextColor3 = Color3.fromRGB(255,220,100)
-}):Play()
-
-local closeBtn = Instance.new("TextButton", Header)
-closeBtn.Size = UDim2.new(0,28,0,28); closeBtn.Position = UDim2.new(1,-38,0.5,-14)
-closeBtn.BackgroundColor3 = Color3.fromRGB(60,20,20); closeBtn.BorderSizePixel = 0
-closeBtn.Text = "✕"; closeBtn.TextColor3 = C.accent
-closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 14
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
-closeBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(Main, TweenInfo.new(0.2), {Size = UDim2.new(0,0,0,0)}):Play()
-    task.wait(0.25); Main.Visible = false
-end)
-
--- Tab Bar
-local tabNames = {"ESP", "COINS", "SURVIVAL", "INFO"}
-local tabBtns, tabContents = {}, {}
-local activeTab = "ESP"
-
-local TabBar = Instance.new("Frame")
-TabBar.Size = UDim2.new(1,-24,0,34); TabBar.Position = UDim2.new(0,12,0,58)
-TabBar.BackgroundColor3 = C.card; TabBar.BorderSizePixel = 0; TabBar.Parent = Main
-Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0,10)
-local tbl = Instance.new("UIListLayout", TabBar)
-tbl.FillDirection = Enum.FillDirection.Horizontal; tbl.Padding = UDim.new(0,2)
-local tbp = Instance.new("UIPadding", TabBar)
-tbp.PaddingLeft = UDim.new(0,3); tbp.PaddingRight = UDim.new(0,3)
-tbp.PaddingTop  = UDim.new(0,3); tbp.PaddingBottom = UDim.new(0,3)
-
-local function makeContent(name)
-    local s = Instance.new("ScrollingFrame")
-    s.Name = name; s.Size = UDim2.new(1,-24,1,-106); s.Position = UDim2.new(0,12,0,100)
-    s.BackgroundTransparency = 1; s.BorderSizePixel = 0
-    s.ScrollBarThickness = 3; s.ScrollBarImageColor3 = C.accent
-    s.Visible = (name == "ESP"); s.Parent = Main
-    local l = Instance.new("UIListLayout", s)
-    l.Padding = UDim.new(0,8); l.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    local p = Instance.new("UIPadding", s)
-    p.PaddingTop = UDim.new(0,8); p.PaddingBottom = UDim.new(0,8)
-    l:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        s.CanvasSize = UDim2.new(0,0,0, l.AbsoluteContentSize.Y + 20)
-    end)
-    return s
-end
-
-for _, name in ipairs(tabNames) do
-    tabContents[name] = makeContent(name)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1/#tabNames, -2, 1, 0)
-    btn.BackgroundColor3 = name == "ESP" and C.accent or C.card
-    btn.BackgroundTransparency = name == "ESP" and 0 or 1
-    btn.BorderSizePixel = 0; btn.Text = name
-    btn.TextColor3 = name == "ESP" and C.white or C.subtext
-    btn.Font = Enum.Font.GothamBold; btn.TextSize = 11; btn.Parent = TabBar
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-    tabBtns[name] = btn
-    btn.MouseButton1Click:Connect(function()
-        activeTab = name
-        for n, b in pairs(tabBtns) do
-            local active = n == name
-            TweenService:Create(b, TweenInfo.new(0.15), {
-                BackgroundTransparency = active and 0 or 1,
-                BackgroundColor3 = C.accent,
-                TextColor3 = active and C.white or C.subtext,
-            }):Play()
-            tabContents[n].Visible = active
-        end
-    end)
-end
-
--- ================== UI HELPERS ==================
-local function sectionLbl(parent, text)
-    local f = Instance.new("Frame", parent)
-    f.Size = UDim2.new(0.95,0,0,20); f.BackgroundTransparency = 1
-    local l = Instance.new("TextLabel", f)
-    l.Size = UDim2.new(1,0,1,0); l.BackgroundTransparency = 1
-    l.Text = text; l.TextColor3 = C.subtext; l.Font = Enum.Font.GothamBold
-    l.TextSize = 10; l.TextXAlignment = Enum.TextXAlignment.Left
-end
-
-local function createToggle(parent, label, color, callback)
-    local card = Instance.new("Frame", parent)
-    card.Size = UDim2.new(0.95,0,0,46); card.BackgroundColor3 = C.card; card.BorderSizePixel = 0
-    Instance.new("UICorner", card).CornerRadius = UDim.new(0,10)
-    local stroke = Instance.new("UIStroke", card); stroke.Color = C.border; stroke.Thickness = 1
-    local lbl = Instance.new("TextLabel", card)
-    lbl.Size = UDim2.new(0.65,0,1,0); lbl.Position = UDim2.new(0,14,0,0)
-    lbl.BackgroundTransparency = 1; lbl.Text = label; lbl.TextColor3 = C.text
-    lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 13; lbl.TextXAlignment = Enum.TextXAlignment.Left
-    local sw = Instance.new("Frame", card)
-    sw.Size = UDim2.new(0,46,0,24); sw.Position = UDim2.new(1,-56,0.5,-12)
-    sw.BackgroundColor3 = C.border; sw.BorderSizePixel = 0
-    Instance.new("UICorner", sw).CornerRadius = UDim.new(1,0)
-    local dot = Instance.new("Frame", sw)
-    dot.Size = UDim2.new(0,18,0,18); dot.Position = UDim2.new(0,3,0.5,-9)
-    dot.BackgroundColor3 = C.white; dot.BorderSizePixel = 0
-    Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
-    local state = false
-    local hit = Instance.new("TextButton", card)
-    hit.Size = UDim2.new(1,0,1,0); hit.BackgroundTransparency = 1; hit.Text = ""
-    hit.MouseButton1Click:Connect(function()
-        state = not state
-        TweenService:Create(sw, TweenInfo.new(0.18), {BackgroundColor3 = state and color or C.border}):Play()
-        TweenService:Create(dot, TweenInfo.new(0.18), {
-            Position = state and UDim2.new(1,-21,0.5,-9) or UDim2.new(0,3,0.5,-9)
-        }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.18), {Color = state and color or C.border}):Play()
-        callback(state)
-    end)
-end
-
-local function createButton(parent, label, color, callback)
-    local btn = Instance.new("TextButton", parent)
-    btn.Size = UDim2.new(0.95,0,0,42); btn.BackgroundColor3 = C.card
-    btn.BorderSizePixel = 0; btn.Text = label; btn.TextColor3 = color
-    btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,10)
-    local stroke = Instance.new("UIStroke", btn); stroke.Color = color; stroke.Thickness = 1
-    btn.MouseButton1Click:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = color, TextColor3 = C.bg}):Play()
-        task.wait(0.12)
-        TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = C.card, TextColor3 = color}):Play()
-        callback()
-    end)
-end
-
--- ================== ESP TAB ==================
-sectionLbl(tabContents["ESP"], "  PLAYER")
-createToggle(tabContents["ESP"], "Player ESP", C.innocent, function(s) espEnabled = s end)
-createToggle(tabContents["ESP"], "Murderer ESP (Highlight Merah)", C.murderer, function(s)
-    highlightMurder = s
-    if not s then clearHighlights() end
-end)
-createToggle(tabContents["ESP"], "Sheriff ESP (Highlight Biru)", C.sheriff, function(s)
-    highlightSheriff = s
-    if not s then clearHighlights() end
-end)
-
-sectionLbl(tabContents["ESP"], "  OBJECTS")
-createToggle(tabContents["ESP"], "Gun ESP (Lokasi Gun di Map)", C.accentY, function(s)
-    gunESPEnabled = s
-    updateGunESP(s)
-    if s then
-        if gunESPConn then gunESPConn:Disconnect() end
-        task.spawn(function()
-            while gunESPEnabled do updateGunESP(true); task.wait(2) end
-        end)
-    end
-end)
-
-sectionLbl(tabContents["ESP"], "  ROLE")
-createButton(tabContents["ESP"], "🔍 Role Detector", C.accentY, function()
-    local role = getRole(LocalPlayer)
-    local rc   = role == "Murderer" and C.murderer or role == "Sheriff" and C.sheriff or C.innocent
-    local ri   = role == "Murderer" and "☠" or role == "Sheriff" and "⭐" or "😇"
-    local gui  = Instance.new("ScreenGui"); gui.Name = "RoleNotif"; gui.ResetOnSpawn = false
-    gui.Parent = game:GetService("CoreGui")
-    local f = Instance.new("Frame", gui)
-    f.Size = UDim2.new(0,270,0,60); f.Position = UDim2.new(0.5,-135,0,55)
-    f.BackgroundColor3 = C.card; f.BorderSizePixel = 0
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0,12)
-    local fs = Instance.new("UIStroke", f); fs.Color = rc; fs.Thickness = 2
-    local fl = Instance.new("TextLabel", f)
-    fl.Size = UDim2.new(1,0,1,0); fl.BackgroundTransparency = 1
-    fl.Text = ri .. "  Role kamu: " .. role; fl.TextColor3 = rc
-    fl.Font = Enum.Font.GothamBold; fl.TextSize = 16
-    TweenService:Create(f, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Position = UDim2.new(0.5,-135,0,75)}):Play()
-    task.delay(3, function() game:GetService("Debris"):AddItem(gui, 0) end)
-end)
-
--- ================== COINS TAB ==================
-sectionLbl(tabContents["COINS"], "  COIN")
-createToggle(tabContents["COINS"], "Coin ESP (Hologram)", C.coin, function(s)
-    coinESPEnabled = s; initCoinESP()
-end)
-createToggle(tabContents["COINS"], "Auto Farm Coin", C.accentG, function(s)
-    autoCollect = s
-    if s then startAutoCollect() end
-end)
-createButton(tabContents["COINS"], "🔄 Refresh Coin ESP", C.coin, function()
-    initCoinESP()
-end)
-
--- ================== SURVIVAL TAB ==================
-sectionLbl(tabContents["SURVIVAL"], "  ALERT")
-createToggle(tabContents["SURVIVAL"], "Murderer Alert (< 30m)", C.murderer, function(s)
-    notifMurderer = s
-    if s then startMurderAlert()
-    elseif notifConn then notifConn:Disconnect(); notifConn = nil end
-end)
-
-sectionLbl(tabContents["SURVIVAL"], "  PICKUP & DODGE")
-createToggle(tabContents["SURVIVAL"], "Auto Pickup Gun", C.sheriff, function(s)
-    autoPickupGun = s
-    if s then startAutoPickup()
-    elseif pickupConn then pickupConn:Disconnect(); pickupConn = nil end
-end)
-createToggle(tabContents["SURVIVAL"], "Auto Dodge Pisau", C.accentY, function(s)
-    autoDodge = s
-    if s then startAutoDodge()
-    elseif dodgeConn then dodgeConn:Disconnect(); dodgeConn = nil end
-end)
-createButton(tabContents["SURVIVAL"], "🏃 Kabur dari Murderer", C.accentG, function()
-    local mc = LocalPlayer.Character
-    local mh = mc and mc:FindFirstChild("HumanoidRootPart")
-    if not mh then return end
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and getRole(p) == "Murderer" then
-            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+        if myChar then
+            local hrp = myChar:FindFirstChild("HumanoidRootPart")
             if hrp then
-                local dir = (mh.Position - hrp.Position).Unit
-                mh.CFrame = CFrame.new(mh.Position + dir * 65)
-            end; break
-        end
-    end
-end)
-
--- ================== INFO TAB ==================
-sectionLbl(tabContents["INFO"], "  ROUND INFO")
-
-local infoCard = Instance.new("Frame", tabContents["INFO"])
-infoCard.Size = UDim2.new(0.95,0,0,200); infoCard.BackgroundColor3 = C.card; infoCard.BorderSizePixel = 0
-Instance.new("UICorner", infoCard).CornerRadius = UDim.new(0,10)
-Instance.new("UIStroke", infoCard).Color = C.border
-local infoLL = Instance.new("UIListLayout", infoCard); infoLL.Padding = UDim.new(0,4)
-local infoP = Instance.new("UIPadding", infoCard)
-infoP.PaddingTop = UDim.new(0,10); infoP.PaddingLeft = UDim.new(0,14)
-infoP.PaddingRight = UDim.new(0,14); infoP.PaddingBottom = UDim.new(0,10)
-
-local function infoRow(txt, color)
-    local l = Instance.new("TextLabel", infoCard)
-    l.Size = UDim2.new(1,0,0,26); l.BackgroundTransparency = 1
-    l.Text = txt; l.TextColor3 = color or C.text
-    l.Font = Enum.Font.GothamBold; l.TextSize = 13
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    return l
-end
-
-local rRole    = infoRow("🎭 Role: —",      C.text)
-local rAlive   = infoRow("💚 Alive: —",     C.innocent)
-local rMurder  = infoRow("☠ Murderer: —",  C.murderer)
-local rSheriff = infoRow("⭐ Sheriff: —",   C.sheriff)
-local rMap     = infoRow("🗺 Map: —",       C.subtext)
-local rPlayers = infoRow("👥 Players: —",   C.subtext)
-local rAliveCount = infoRow("🔢 Alive Count: —", C.accentY)
-
-infoLL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    infoCard.Size = UDim2.new(0.95, 0, 0, infoLL.AbsoluteContentSize.Y + 20)
-end)
-
-task.spawn(function()
-    while true do
-        pcall(function()
-            local myRole   = getRole(LocalPlayer)
-            local rc       = myRole == "Murderer" and C.murderer or myRole == "Sheriff" and C.sheriff or C.innocent
-            local ri       = myRole == "Murderer" and "☠" or myRole == "Sheriff" and "⭐" or "😇"
-            rRole.Text     = ri .. " Role: " .. myRole; rRole.TextColor3 = rc
-
-            local alive = 0; local total = 0; local murderName = "?"; local sheriffName = "?"
-            for _, p in pairs(Players:GetPlayers()) do
-                total = total + 1
-                if p.Character then
-                    local h = p.Character:FindFirstChildOfClass("Humanoid")
-                    if h and h.Health > 0 then alive = alive + 1 end
-                end
-                local r = getRole(p)
-                if r == "Murderer" then murderName = p.Name end
-                if r == "Sheriff"  then sheriffName = p.Name end
+                hrp.Anchored = state
             end
-            rAlive.Text     = "💚 Alive: " .. alive .. "/" .. total
-            rAliveCount.Text = "🔢 Alive Count: " .. alive
-            rMurder.Text    = "☠ Murderer: " .. murderName
-            rSheriff.Text   = "⭐ Sheriff: " .. sheriffName
-            rPlayers.Text   = "👥 Players: " .. total
+        end
+        -- Update warna tombol float freeze
+        if freezeSelfBtn then
+            TweenService:Create(freezeSelfBtn, TweenInfo.new(0.15), {
+                BackgroundColor3 = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(30, 30, 45)
+            }):Play()
+            freezeSelfBtn.Text = state and "❄ ON" or "❄ OFF"
+        end
+    end
 
-            -- Deteksi map dari nama model terbesar di workspace
-            local mapName = "?"
-            for _, v in pairs(workspace:GetChildren()) do
-                if v:IsA("Model") and v.Name ~= "Camera" and not Players:GetPlayerFromCharacter(v) then
-                    mapName = v.Name; break
-                end
+    -- Re-anchor saat respawn
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if freezeSelfEnabled then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = true end
+        end
+    end)
+
+    createToggle(tabUtility, "❄️ Freeze Diri Sendiri (Tombol Luar)", false, function(s)
+        -- Munculkan/sembunyikan tombol float freeze diri
+        freezeSelfBtnVisible = s
+        if s then
+            if not freezeSelfBtn then
+                -- Buat tombol float khusus freeze diri
+                freezeSelfBtn = Instance.new("TextButton", ScreenGui)
+                freezeSelfBtn.Size             = UDim2.new(0, 72, 0, 36)
+                freezeSelfBtn.Position         = UDim2.new(0, 15, 0.5, 40)
+                freezeSelfBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+                freezeSelfBtn.BorderSizePixel  = 0
+                freezeSelfBtn.Text             = "❄ OFF"
+                freezeSelfBtn.TextColor3       = Color3.fromRGB(0, 220, 255)
+                freezeSelfBtn.Font             = Enum.Font.GothamBold
+                freezeSelfBtn.TextSize         = 13
+                freezeSelfBtn.ZIndex           = 20
+                Instance.new("UICorner", freezeSelfBtn).CornerRadius = UDim.new(0, 10)
+                local fss = Instance.new("UIStroke", freezeSelfBtn)
+                fss.Color = Color3.fromRGB(0, 200, 255); fss.Thickness = 1.5
+
+                -- Drag + Click sistem threshold (sama kayak tombol menu utama)
+                local fsDrag   = false
+                local fsMoved  = false
+                local fsX, fsY = 0, 0
+                local fsPX, fsPY = 0, 0
+                local THRESHOLD = 6
+
+                freezeSelfBtn.InputBegan:Connect(function(inp)
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1
+                    or inp.UserInputType == Enum.UserInputType.Touch then
+                        fsDrag  = true
+                        fsMoved = false
+                        fsX     = inp.Position.X
+                        fsY     = inp.Position.Y
+                        fsPX    = freezeSelfBtn.Position.X.Offset
+                        fsPY    = freezeSelfBtn.Position.Y.Offset
+                    end
+                end)
+
+                freezeSelfBtn.InputEnded:Connect(function(inp)
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1
+                    or inp.UserInputType == Enum.UserInputType.Touch then
+                        -- Kalau tidak gerak = klik biasa → toggle freeze
+                        if not fsMoved then
+                            applyFreezeSelf(not freezeSelfEnabled)
+                        end
+                        fsDrag  = false
+                        fsMoved = false
+                    end
+                end)
+
+                RunService.RenderStepped:Connect(function()
+                    if not fsDrag then return end
+                    local UIS = game:GetService("UserInputService")
+                    local m   = UIS:GetMouseLocation()
+                    local dx  = m.X - fsX
+                    local dy  = m.Y - fsY
+                    -- Anggap drag kalau geser lebih dari threshold
+                    if math.abs(dx) > THRESHOLD or math.abs(dy) > THRESHOLD then
+                        fsMoved = true
+                    end
+                    if fsMoved then
+                        local vp = workspace.CurrentCamera.ViewportSize
+                        freezeSelfBtn.Position = UDim2.new(0,
+                            math.clamp(fsPX + dx, 0, vp.X - 72), 0,
+                            math.clamp(fsPY + dy, 0, vp.Y - 36)
+                        )
+                    end
+                end)
+
+                -- Animasi masuk
+                freezeSelfBtn.Size = UDim2.new(0, 0, 0, 36)
+                TweenService:Create(freezeSelfBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
+                    Size = UDim2.new(0, 72, 0, 36)
+                }):Play()
+            else
+                freezeSelfBtn.Visible = true
             end
-            rMap.Text = "🗺 Map: " .. mapName
-        end)
-        task.wait(1.5)
+        else
+            -- Sembunyikan tombol dan matikan freeze
+            applyFreezeSelf(false)
+            if freezeSelfBtn then
+                TweenService:Create(freezeSelfBtn, TweenInfo.new(0.15), {
+                    Size = UDim2.new(0, 0, 0, 36)
+                }):Play()
+                task.delay(0.2, function()
+                    if freezeSelfBtn then
+                        freezeSelfBtn.Visible = false
+                    end
+                end)
+            end
+        end
+    end)
+
+    -- TAB INFO DENGAN SISTEM KEY COUNTDOWN DARI SERVER
+    local infoBox = Instance.new("Frame", tabInfo) infoBox.Size = UDim2.new(0.95, 0, 0, 150) infoBox.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Instance.new("UICorner", infoBox).CornerRadius = UDim.new(0, 8)
+    
+    local iLabel = Instance.new("TextLabel", infoBox) iLabel.Size = UDim2.new(1, 0, 0, 25) iLabel.BackgroundTransparency = 1 iLabel.Text = "INFORMASI LISENSI" iLabel.TextColor3 = themeColor iLabel.Font = Enum.Font.GothamBold iLabel.TextSize = 12
+
+    local executorText = Instance.new("TextLabel", infoBox) executorText.Size = UDim2.new(0.92, 0, 0, 22) executorText.Position = UDim2.new(0.04, 0, 0, 30) executorText.BackgroundTransparency = 1 executorText.TextColor3 = Color3.fromRGB(200, 210, 255) executorText.Font = Enum.Font.Gotham executorText.TextSize = 11 executorText.Text = "Executor: " .. userExecutor executorText.TextXAlignment = Enum.TextXAlignment.Left
+
+    local keyTypeText = Instance.new("TextLabel", infoBox) keyTypeText.Size = UDim2.new(0.92, 0, 0, 22) keyTypeText.Position = UDim2.new(0.04, 0, 0, 52) keyTypeText.BackgroundTransparency = 1 keyTypeText.TextColor3 = Color3.fromRGB(200, 210, 255) keyTypeText.Font = Enum.Font.Gotham executorText.TextSize = 11 keyTypeText.Text = "Jenis Paket: " .. keyJenis keyTypeText.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Label Hitung Mundur yang diupdate tiap detik secara real-time
+    infoKeyCountdownLabel = Instance.new("TextLabel", infoBox)
+    infoKeyCountdownLabel.Size = UDim2.new(0.92, 0, 0, 22)
+    infoKeyCountdownLabel.Position = UDim2.new(0.04, 0, 0, 74)
+    infoKeyCountdownLabel.BackgroundTransparency = 1
+    infoKeyCountdownLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+    infoKeyCountdownLabel.Font = Enum.Font.GothamBold
+    infoKeyCountdownLabel.TextSize = 11
+    infoKeyCountdownLabel.Text = "Menghubungkan sisa durasi server..."
+    infoKeyCountdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local infoDevLabel = Instance.new("TextLabel", infoBox) infoDevLabel.Size = UDim2.new(0.92, 0, 0, 45) infoDevLabel.Position = UDim2.new(0.04, 0, 0, 100) infoDevLabel.BackgroundTransparency = 1 infoDevLabel.TextColor3 = Color3.fromRGB(160, 160, 170) infoDevLabel.Font = Enum.Font.Gotham infoDevLabel.TextSize = 10 infoDevLabel.Text = "Developer: Putzzdev\nWhatsApp: 088976255131" infoDevLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    tabs[1].TextColor3 = Color3.new(1,1,1) tabs[1].BackgroundTransparency = 0.1 contents[1].Visible = true
+    
+    local openBtn = Instance.new("ImageButton", ScreenGui) openBtn.Size = UDim2.new(0, 50, 0, 50) openBtn.Position = UDim2.new(0, 15, 0.5, -25) openBtn.BackgroundTransparency = 1 openBtn.Image = "rbxassetid://72495850369898" openBtn.Active = true openBtn.Draggable = true
+    Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 10)
+    local obs = Instance.new("UIStroke", openBtn) obs.Color = Color3.new(1,1,1) obs.Thickness = 1.2
+
+    local menuOpen = true
+    openBtn.MouseButton1Click:Connect(function()
+        menuOpen = not menuOpen
+        if menuOpen then mainFrame.Visible = true TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position = UDim2.new(0.5, -195, 0.5, -240)}):Play()
+        else TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position = UDim2.new(0.5, -195, 1, 10)}):Play() task.wait(0.2) mainFrame.Visible = false end
+    end)
+    
+    LocalPlayer.CharacterAdded:Connect(function() task.wait(1) if noclipEnabled then startNoclip() end if flyEnabled then startFlyMode() end end)
+end
+
+-- ================== GUI LAYOUT AUTH KEY SYSTEM ==================
+local KeyGui = Instance.new("ScreenGui", game.CoreGui)
+KeyGui.Name = "DripKeySystem"
+KeyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local KeyFrame = Instance.new("Frame", KeyGui)
+KeyFrame.Size = UDim2.new(0, 340, 0, 320) -- Diperkecil agar sedeng dan tidak kebesaran di HP
+KeyFrame.Position = UDim2.new(0.5, -170, 0.5, -160)
+KeyFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24) -- Warna gelap kalem
+KeyFrame.Active = true
+KeyFrame.Draggable = true
+Instance.new("UICorner", KeyFrame).CornerRadius = UDim.new(0, 12)
+
+local KeyStroke = Instance.new("UIStroke", KeyFrame)
+KeyStroke.Color = themeColor
+KeyStroke.Thickness = 1.5
+
+local KeyTitle = Instance.new("TextLabel", KeyFrame)
+KeyTitle.Size = UDim2.new(1, 0, 0, 40)
+KeyTitle.Position = UDim2.new(0, 0, 0, 15)
+KeyTitle.BackgroundTransparency = 1
+KeyTitle.Text = "DRIP CLIENT VERIFIKASI"
+KeyTitle.TextColor3 = Color3.new(1, 1, 1)
+KeyTitle.Font = Enum.Font.GothamBlack
+KeyTitle.TextSize = 14
+
+local InfoFrame = Instance.new("Frame", KeyFrame)
+InfoFrame.Size = UDim2.new(0.9, 0, 0, 45)
+InfoFrame.Position = UDim2.new(0.05, 0, 0.22, 0)
+InfoFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+Instance.new("UICorner", InfoFrame).CornerRadius = UDim.new(0, 6)
+
+local InfoText = Instance.new("TextLabel", InfoFrame)
+InfoText.Size = UDim2.new(1, -20, 1, 0)
+InfoText.Position = UDim2.new(0, 10, 0, 0)
+InfoText.BackgroundTransparency = 1
+InfoText.Text = "Silakan input key premium Anda di bawah ini"
+InfoText.TextColor3 = Color3.fromRGB(160, 160, 170)
+InfoText.Font = Enum.Font.Gotham
+InfoText.TextSize = 11
+
+local KeyTextBox = Instance.new("TextBox", KeyFrame)
+KeyTextBox.Size = UDim2.new(0.85, 0, 0, 36)
+KeyTextBox.Position = UDim2.new(0.075, 0, 0.42, 0)
+KeyTextBox.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+KeyTextBox.TextColor3 = Color3.new(1, 1, 1)
+KeyTextBox.PlaceholderText = "Input key server di sini..."
+KeyTextBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 110)
+KeyTextBox.Font = Enum.Font.Gotham
+KeyTextBox.TextSize = 12
+KeyTextBox.ClearTextOnFocus = true
+Instance.new("UICorner", KeyTextBox).CornerRadius = UDim.new(0, 6)
+
+local VerifyBtn = Instance.new("TextButton", KeyFrame)
+VerifyBtn.Size = UDim2.new(0.85, 0, 0, 36)
+VerifyBtn.Position = UDim2.new(0.075, 0, 0.57, 0)
+VerifyBtn.BackgroundColor3 = themeColor
+VerifyBtn.Text = "AUTENTIKASI KEY"
+VerifyBtn.TextColor3 = Color3.new(1, 1, 1)
+VerifyBtn.Font = Enum.Font.GothamBold
+VerifyBtn.TextSize = 12
+Instance.new("UICorner", VerifyBtn).CornerRadius = UDim.new(0, 6)
+
+local WebsiteBtn = Instance.new("TextButton", KeyFrame)
+WebsiteBtn.Size = UDim2.new(0.35, 0, 0, 26)
+WebsiteBtn.Position = UDim2.new(0.325, 0, 0.71, 0)
+WebsiteBtn.BackgroundColor3 = Color3.fromRGB(220, 120, 0)
+WebsiteBtn.Text = "AMBIL KEY"
+WebsiteBtn.TextColor3 = Color3.new(1, 1, 1)
+WebsiteBtn.Font = Enum.Font.GothamBold
+WebsiteBtn.TextSize = 11
+Instance.new("UICorner", WebsiteBtn).CornerRadius = UDim.new(0, 5)
+
+local StatusFrame = Instance.new("Frame", KeyFrame)
+StatusFrame.Size = UDim2.new(0.9, 0, 0, 32)
+StatusFrame.Position = UDim2.new(0.05, 0, 0.84, 0)
+StatusFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+Instance.new("UICorner", StatusFrame).CornerRadius = UDim.new(0, 6)
+
+local StatusIcon = Instance.new("TextLabel", StatusFrame)
+StatusIcon.Size = UDim2.new(0, 30, 1, 0)
+StatusIcon.Position = UDim2.new(0, 5, 0, 0)
+StatusIcon.BackgroundTransparency = 1
+StatusIcon.Text = "ℹ️"
+StatusIcon.TextSize = 12
+
+local StatusLabel = Instance.new("TextLabel", StatusFrame)
+StatusLabel.Size = UDim2.new(1, -40, 1, 0)
+StatusLabel.Position = UDim2.new(0, 35, 0, 0)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "Menunggu verifikasi lisensi..."
+StatusLabel.TextColor3 = Color3.new(1, 1, 1)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.TextSize = 10
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+WebsiteBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(WEBSITE_URL)
+        StatusLabel.Text = "Link berhasil disalin ke clipboard!"
+        StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+        showNotification("BERHASIL", "Link web key disalin!", 2, Color3.fromRGB(0, 120, 0))
+    else
+        StatusLabel.Text = WEBSITE_URL
     end
 end)
 
-createButton(tabContents["INFO"], "🔄 Refresh Info", C.accentB, function() end)
+-- ANIMASI MULTI PROGRESS BAR BARU SETELAH KEY VALIDI (MENGGANTIKAN TEKS 1,2,3)
+local function runPremiumSuccessProgress()
+    -- Hilangkan semua isi input GUI Key untuk proses transisi
+    InfoFrame:Destroy()
+    KeyTextBox:Destroy()
+    VerifyBtn:Destroy()
+    WebsiteBtn:Destroy()
+    
+    StatusFrame.Position = UDim2.new(0.05, 0, 0.65, 0)
+    StatusLabel.Text = "Mengecek token validasi di database..."
+    StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    
+    -- Membuat progress bar kesuksesan di dalam UI Key
+    local successBarBg = Instance.new("Frame", KeyFrame)
+    successBarBg.Size = UDim2.new(0.9, 0, 0, 6)
+    successBarBg.Position = UDim2.new(0.05, 0, 0.48, 0)
+    successBarBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    Instance.new("UICorner", successBarBg).CornerRadius = UDim.new(0, 3)
+    
+    local successBar = Instance.new("Frame", successBarBg)
+    successBar.Size = UDim2.new(0, 0, 1, 0)
+    successBar.BackgroundColor3 = Color3.fromRGB(0, 255, 120)
+    Instance.new("UICorner", successBar).CornerRadius = UDim.new(0, 3)
+    
+    local function setProgress(pct, text)
+        StatusLabel.Text = text
+        local tw = TweenService:Create(successBar, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Size = UDim2.new(pct, 0, 1, 0)})
+        tw:Play()
+        tw.Completed:Wait()
+    end
+    
+    setProgress(0.30, "Membuka enkripsi enkapsulasi data...")
+    task.wait(0.4)
+    setProgress(0.75, "Sinkronisasi waktu server terenkripsi...")
+    task.wait(0.4)
+    setProgress(1.00, "Sukses! Meluncurkan interface utama...")
+    task.wait(0.5)
 
--- ================== PLAYER LIST (bawah INFO) ==================
-sectionLbl(tabContents["INFO"], "  TELEPORT KE PLAYER")
+    -- Fade out dan destroy seluruh Key GUI sebelum buka main menu
+    TweenService:Create(KeyFrame, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
+    for _, v in pairs(KeyFrame:GetDescendants()) do
+        if v:IsA("TextLabel") or v:IsA("TextButton") then
+            pcall(function() TweenService:Create(v, TweenInfo.new(0.25), {TextTransparency = 1}):Play() end)
+        elseif v:IsA("Frame") then
+            pcall(function() TweenService:Create(v, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play() end)
+        end
+    end
+    task.wait(0.3)
+    -- Destroy seluruh KeyGui biar bersih
+    if game.CoreGui:FindFirstChild("DripKeySystem") then
+        game.CoreGui.DripKeySystem:Destroy()
+    end
 
-local plCard = Instance.new("Frame", tabContents["INFO"])
-plCard.Size = UDim2.new(0.95,0,0,260); plCard.BackgroundColor3 = C.card; plCard.BorderSizePixel = 0
-Instance.new("UICorner", plCard).CornerRadius = UDim.new(0,10)
-Instance.new("UIStroke", plCard).Color = C.border
+    pcall(loadMainScript)
+end
 
-local plScroll = Instance.new("ScrollingFrame", plCard)
-plScroll.Size = UDim2.new(1,-10,1,-10); plScroll.Position = UDim2.new(0,5,0,5)
-plScroll.BackgroundTransparency = 1; plScroll.BorderSizePixel = 0
-plScroll.ScrollBarThickness = 3; plScroll.ScrollBarImageColor3 = C.accent
-local plL = Instance.new("UIListLayout", plScroll)
-plL.Padding = UDim.new(0,5); plL.HorizontalAlignment = Enum.HorizontalAlignment.Center
-local plP = Instance.new("UIPadding", plScroll)
-plP.PaddingTop = UDim.new(0,5); plP.PaddingBottom = UDim.new(0,5)
-plL:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    plScroll.CanvasSize = UDim2.new(0,0,0, plL.AbsoluteContentSize.Y + 10)
+-- EVENT KLIK AUTENTIKASI KEY
+VerifyBtn.MouseButton1Click:Connect(function()
+    local inputKey = KeyTextBox.Text:gsub("%s+", "")
+    if inputKey == "" then 
+        StatusLabel.Text = "Key tidak boleh kosong!"
+        StatusLabel.TextColor3 = Color3.fromRGB(255,0,0) 
+        return 
+    end
+    
+    StatusLabel.Text = "Sedang verifikasi ke database server..." 
+    StatusLabel.TextColor3 = Color3.fromRGB(255,255,0) 
+    
+    local isValid, message = checkKeyExpiry(inputKey)
+    
+    if isValid then
+        StatusLabel.Text = "Key Valid!" 
+        StatusLabel.TextColor3 = Color3.fromRGB(0,255,120) 
+        task.wait(0.5)
+        runPremiumSuccessProgress() -- Menjalankan progress bar animasi pengganti teks hitung mundur
+    else
+        StatusLabel.Text = message 
+        StatusLabel.TextColor3 = Color3.fromRGB(255,0,0) 
+    end
 end)
 
-local function refreshPlayers()
-    for _, c in pairs(plScroll:GetChildren()) do
-        if c:IsA("Frame") or c:IsA("TextButton") then c:Destroy() end
-    end
-    local rb = Instance.new("TextButton", plScroll)
-    rb.Size = UDim2.new(0.9,0,0,30); rb.BackgroundColor3 = Color3.fromRGB(0,120,80)
-    rb.BorderSizePixel = 0; rb.Text = "🔄 REFRESH"; rb.TextColor3 = C.white
-    rb.Font = Enum.Font.GothamBold; rb.TextSize = 12
-    Instance.new("UICorner", rb).CornerRadius = UDim.new(0,8)
-    rb.MouseButton1Click:Connect(refreshPlayers)
-
-    local count = 0
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            count = count + 1
-            local roleColor, roleIcon = getRoleColor(p)
-            local row = Instance.new("Frame", plScroll)
-            row.Size = UDim2.new(0.9,0,0,46); row.BackgroundColor3 = C.bg; row.BorderSizePixel = 0
-            Instance.new("UICorner", row).CornerRadius = UDim.new(0,8)
-            Instance.new("UIStroke", row).Color = C.border
-            local nl = Instance.new("TextLabel", row)
-            nl.Size = UDim2.new(0.55,0,1,0); nl.Position = UDim2.new(0,10,0,0)
-            nl.BackgroundTransparency = 1
-            nl.Text = (roleIcon ~= "" and roleIcon .. " " or "") .. p.Name
-            nl.TextColor3 = roleColor; nl.Font = Enum.Font.GothamBold
-            nl.TextSize = 12; nl.TextXAlignment = Enum.TextXAlignment.Left
-            local tpBtn = Instance.new("TextButton", row)
-            tpBtn.Size = UDim2.new(0,80,0,28); tpBtn.Position = UDim2.new(1,-88,0.5,-14)
-            tpBtn.BackgroundColor3 = C.accent; tpBtn.BorderSizePixel = 0
-            tpBtn.Text = "TELEPORT"; tpBtn.TextColor3 = C.white
-            tpBtn.Font = Enum.Font.GothamBold; tpBtn.TextSize = 11
-            Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0,6)
-            local target = p
-            tpBtn.MouseButton1Click:Connect(function()
-                local mc = LocalPlayer.Character; local tc = target.Character
-                if mc and tc then
-                    local mh = mc:FindFirstChild("HumanoidRootPart")
-                    local th = tc:FindFirstChild("HumanoidRootPart")
-                    if mh and th then mh.CFrame = th.CFrame + Vector3.new(0,4,0) end
-                end
-            end)
-        end
-    end
-    if count == 0 then
-        local el = Instance.new("TextLabel", plScroll)
-        el.Size = UDim2.new(0.9,0,0,36); el.BackgroundTransparency = 1
-        el.Text = "Tidak ada player lain"; el.TextColor3 = C.subtext
-        el.Font = Enum.Font.Gotham; el.TextSize = 12
-    end
-end
-
-refreshPlayers()
-Players.PlayerAdded:Connect(refreshPlayers)
-Players.PlayerRemoving:Connect(refreshPlayers)
-
--- ================== FLOATING BUTTON ==================
-local FloatBtn = Instance.new("TextButton", ScreenGui)
-FloatBtn.Size = UDim2.new(0,48,0,48); FloatBtn.Position = UDim2.new(0,12,0.5,-24)
-FloatBtn.BackgroundColor3 = C.accent; FloatBtn.BorderSizePixel = 0
-FloatBtn.Text = "🔪"; FloatBtn.TextSize = 22; FloatBtn.ZIndex = 10
-Instance.new("UICorner", FloatBtn).CornerRadius = UDim.new(1,0)
-local fStroke = Instance.new("UIStroke", FloatBtn); fStroke.Color = Color3.fromRGB(255,150,50); fStroke.Thickness = 2
-TweenService:Create(fStroke, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Thickness = 4}):Play()
-
--- Drag float btn + toggle menu (pisah drag vs click)
-do
-    local drag      = false
-    local moved     = false  -- track apakah beneran di-drag atau cuma klik
-    local sx, sy    = 0, 0
-    local px, py    = 0, 0
-    local DRAG_THRESHOLD = 6  -- pixel minimum biar dianggap drag
-
-    FloatBtn.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            drag  = true
-            moved = false
-            sx    = inp.Position.X
-            sy    = inp.Position.Y
-            px    = FloatBtn.Position.X.Offset
-            py    = FloatBtn.Position.Y.Offset
-        end
-    end)
-
-    FloatBtn.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1
-        or inp.UserInputType == Enum.UserInputType.Touch then
-            -- Kalau tidak bergerak = ini klik biasa → toggle menu
-            if not moved then
-                local menuOpen = Main.Visible
-                if not menuOpen then
-                    Main.Visible = true
-                    Main.Size    = UDim2.new(0,0,0,0)
-                    TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Back), {
-                        Size = UDim2.new(0,390,0,530)
-                    }):Play()
-                else
-                    TweenService:Create(Main, TweenInfo.new(0.2), {
-                        Size = UDim2.new(0,0,0,0)
-                    }):Play()
-                    task.delay(0.22, function() Main.Visible = false end)
-                end
-            end
-            drag  = false
-            moved = false
-        end
-    end)
-
-    RunService.RenderStepped:Connect(function()
-        if not drag then return end
-        local m   = UserInputService:GetMouseLocation()
-        local dx  = m.X - sx
-        local dy  = m.Y - sy
-        -- Tandai moved kalau sudah geser lebih dari threshold
-        if math.abs(dx) > DRAG_THRESHOLD or math.abs(dy) > DRAG_THRESHOLD then
-            moved = true
-        end
-        if moved then
-            local vp = Camera.ViewportSize
-            FloatBtn.Position = UDim2.new(0,
-                math.clamp(px + dx, 0, vp.X - 48), 0,
-                math.clamp(py + dy, 0, vp.Y - 48)
-            )
-        end
-    end)
-end
-
--- Drag main menu dari header
-do
-    local drag = false; local sx, sy, px, py = 0, 0, 0, 0
-    Header.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            drag = true; sx = inp.Position.X; sy = inp.Position.Y
-            px = Main.Position.X.Offset; py = Main.Position.Y.Offset
-            inp.Changed:Connect(function()
-                if inp.UserInputState == Enum.UserInputState.End then drag = false end
-            end)
-        end
-    end)
-    RunService.RenderStepped:Connect(function()
-        if not drag then return end
-        local m  = UserInputService:GetMouseLocation()
-        local vp = Camera.ViewportSize
-        local sz = Main.AbsoluteSize
-        Main.Position = UDim2.new(0,
-            math.clamp(px + (m.X - sx), 0, vp.X - sz.X), 0,
-            math.clamp(py + (m.Y - sy), 0, vp.Y - sz.Y)
-        )
-    end)
-end
-
-print("[Putzzdev] MM2 Script loaded! 🔪")
+-- ================== INITIAL RUN ESP GRAPHICS ==================
+for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
+Players.PlayerAdded:Connect(function(p) createESP(p) createSkeleton(p) end)
+Players.PlayerRemoving:Connect(function(p)
+    if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
+    if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
+end)
