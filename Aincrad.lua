@@ -1,7 +1,4 @@
--- ================== DRIP CLIENT V8.2 RAYFIELD UI ==================
--- UI menggunakan Rayfield Interface Suite by Sirius
--- Key system dengan Firebase database
-
+-- ================== DRIP CLIENT V8.2 RAYFIELD UI (FIXED) ==================
 -- ================== LOAD RAYFIELD ==================
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
 
@@ -248,7 +245,12 @@ local function startNoclip()
     end)
 end
 
-local function stopNoclip() if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end end
+local function stopNoclip() 
+    if noclipConnection then 
+        noclipConnection:Disconnect() 
+        noclipConnection = nil 
+    end 
+end
 
 local function toggleSpin(state)
     spinEnabled = state
@@ -308,7 +310,7 @@ local function toggleInvisible(state)
     end
 end
 
--- ================== GOD MODE PERMANEN ==================
+-- ================== GOD MODE ==================
 local function setupAntiDamage()
     if antiDamageHeartbeat then
         if type(antiDamageHeartbeat) == "table" and antiDamageHeartbeat._disconnect then
@@ -579,22 +581,31 @@ end)
 local function teleportToPlayer(targetPlayer)
     if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         LocalPlayer.Character.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
-        Rayfield:Notify({
-            Title = "Teleport",
-            Content = "Teleported to " .. targetPlayer.Name,
-            Duration = 2,
-        })
+        if Rayfield and Rayfield.Notify then
+            Rayfield:Notify({
+                Title = "Teleport",
+                Content = "Teleported to " .. targetPlayer.Name,
+                Duration = 2,
+            })
+        end
     end
 end
 
 -- ================== MAIN CHEAT INTERFACE DENGAN RAYFIELD ==================
+local mainWindowLoaded = false
+
 local function loadMainScript()
-    -- Hapus key system GUI jika ada
-    if game.CoreGui:FindFirstChild("DripKeySystem") then
-        game.CoreGui.DripKeySystem:Destroy()
-    end
+    if mainWindowLoaded then return end
+    mainWindowLoaded = true
     
-    createPlayerCounter()
+    -- Hapus key system GUI jika ada
+    pcall(function()
+        if game.CoreGui:FindFirstChild("DripKeySystem") then
+            game.CoreGui.DripKeySystem:Destroy()
+        end
+    end)
+    
+    pcall(createPlayerCounter)
     
     -- Buat window utama
     local Window = Rayfield:CreateWindow({
@@ -810,7 +821,7 @@ local function loadMainScript()
                 table.insert(options, plr.DisplayName or plr.Name)
             end
         end
-        teleportDropdown:SetOptions(options)
+        pcall(function() teleportDropdown:SetOptions(options) end)
     end
     
     updateTeleportDropdown()
@@ -825,11 +836,13 @@ local function loadMainScript()
         Flag = "FreezeAll",
         Callback = function(Value)
             freezeAllPlayers(Value)
-            Rayfield:Notify({
-                Title = "Freeze",
-                Content = Value and "Semua player dibekukan!" or "Freeze dinonaktifkan",
-                Duration = 2,
-            })
+            if Rayfield and Rayfield.Notify then
+                Rayfield:Notify({
+                    Title = "Freeze",
+                    Content = Value and "Semua player dibekukan!" or "Freeze dinonaktifkan",
+                    Duration = 2,
+                })
+            end
         end,
     })
     
@@ -870,14 +883,14 @@ local function loadMainScript()
     
     -- Update countdown setiap detik
     task.spawn(function()
-        while true do
+        while mainWindowLoaded do
             task.wait(1)
             if keyValidGlobal and keyExpiryTime > 0 then
                 local _, _, _, _, timeStr = getTimeRemaining(keyExpiryTime)
                 if os.time() > keyExpiryTime then
-                    keyCountdownLabel:Set("Sisa Durasi", "EXPIRED! (Harap ganti key)")
+                    pcall(function() keyCountdownLabel:Set("Sisa Durasi", "EXPIRED! (Harap ganti key)") end)
                 else
-                    keyCountdownLabel:Set("Sisa Durasi", timeStr)
+                    pcall(function() keyCountdownLabel:Set("Sisa Durasi", timeStr) end)
                 end
             end
         end
@@ -885,13 +898,13 @@ local function loadMainScript()
     
     -- Update ESP untuk player baru/keluar
     for _, p in pairs(Players:GetPlayers()) do 
-        createESP(p) 
-        createSkeleton(p) 
+        pcall(function() createESP(p) end)
+        pcall(function() createSkeleton(p) end)
     end
     
     Players.PlayerAdded:Connect(function(p) 
-        createESP(p) 
-        createSkeleton(p) 
+        pcall(function() createESP(p) end)
+        pcall(function() createSkeleton(p) end)
     end)
     
     Players.PlayerRemoving:Connect(function(p)
@@ -907,12 +920,17 @@ local function loadMainScript()
             end 
             SkeletonESP[p] = nil 
         end
-        updateTeleportDropdown()
+        pcall(updateTeleportDropdown)
     end)
 end
 
 -- ================== KEY SYSTEM UI DENGAN RAYFIELD ==================
+local keyWindowCreated = false
+
 local function showKeySystem()
+    if keyWindowCreated then return end
+    keyWindowCreated = true
+    
     local KeyWindow = Rayfield:CreateWindow({
         Name = "DRIP CLIENT - VERIFIKASI KEY",
         Icon = 0,
@@ -951,14 +969,16 @@ local function showKeySystem()
         Callback = function()
             if setclipboard then
                 setclipboard(WEBSITE_URL)
-                statusParagraph:Set("Status", "Link berhasil disalin ke clipboard!")
-                Rayfield:Notify({
-                    Title = "Berhasil",
-                    Content = "Link web key disalin!",
-                    Duration = 2,
-                })
+                pcall(function() statusParagraph:Set("Status", "Link berhasil disalin ke clipboard!") end)
+                if Rayfield and Rayfield.Notify then
+                    Rayfield:Notify({
+                        Title = "Berhasil",
+                        Content = "Link web key disalin!",
+                        Duration = 2,
+                    })
+                end
             else
-                statusParagraph:Set("Status", WEBSITE_URL)
+                pcall(function() statusParagraph:Set("Status", WEBSITE_URL) end)
             end
         end,
     })
@@ -968,35 +988,44 @@ local function showKeySystem()
         Callback = function()
             local inputKey = keyInput:GetValue():gsub("%s+", "")
             if inputKey == "" then 
-                statusParagraph:Set("Status", "Key tidak boleh kosong!")
+                pcall(function() statusParagraph:Set("Status", "Key tidak boleh kosong!") end)
                 return 
             end
             
-            statusParagraph:Set("Status", "Sedang verifikasi ke database server...")
+            pcall(function() statusParagraph:Set("Status", "Sedang verifikasi ke database server...") end)
             
             local isValid, message = checkKeyExpiry(inputKey)
             
             if isValid then
-                statusParagraph:Set("Status", "✓ Key Valid! Loading menu...")
-                Rayfield:Notify({
-                    Title = "Sukses",
-                    Content = "Key berhasil diverifikasi!",
-                    Duration = 2,
-                })
+                pcall(function() statusParagraph:Set("Status", "✓ Key Valid! Loading menu...") end)
+                if Rayfield and Rayfield.Notify then
+                    Rayfield:Notify({
+                        Title = "Sukses",
+                        Content = "Key berhasil diverifikasi!",
+                        Duration = 2,
+                    })
+                end
                 task.wait(1)
-                KeyWindow:Destroy()
-                loadMainScript()
+                pcall(function() KeyWindow:Destroy() end)
+                pcall(loadMainScript)
             else
-                statusParagraph:Set("Status", "✗ " .. message)
-                Rayfield:Notify({
-                    Title = "Gagal",
-                    Content = message,
-                    Duration = 3,
-                })
+                pcall(function() statusParagraph:Set("Status", "✗ " .. message) end)
+                if Rayfield and Rayfield.Notify then
+                    Rayfield:Notify({
+                        Title = "Gagal",
+                        Content = message,
+                        Duration = 3,
+                    })
+                end
             end
         end,
     })
 end
 
--- Start the key system
-showKeySystem()
+-- Start the key system with error handling
+local success, err = pcall(showKeySystem)
+if not success then
+    warn("Error loading key system: " .. tostring(err))
+    -- Fallback: langsung load main script tanpa key system
+    pcall(loadMainScript)
+end
