@@ -1,111 +1,342 @@
--- ================== ELEMENT ARENA EXPLOIT SCRIPT ==================
--- Game: Element Arena
--- Fitur: Auto Farm, ESP Player, Kill Aura, Speed, Jump, dll
+-- ================== ELEMENT ARENA - ADVANCED EXPLOIT ==================
+-- Berdasarkan struktur game yang ditemukan via Delta Console
+-- By: Berdasarkan analisis screenshot
 
--- ================== LOAD SERVICES ==================
+-- ================== LOAD RAYFIELD ==================
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
+
+-- ================== SERVICES ==================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 -- ================== VARIABLES ==================
-local PlayersList = {}
-local ESPEnabled = false
-local KillAuraEnabled = false
+-- Combat
+local AutoFarmEnabled = false
+local AimbotEnabled = false
+local HitBoxExpanderEnabled = false
+local AttackRange = 30
+local FollowDistance = 10
+local lastAttack = 0
+local AttackDelay = 0.3
+local targetPlayer = nil
+
+-- Movement
 local SpeedHackEnabled = false
 local JumpHackEnabled = false
-local AutoFarmEnabled = false
+local FlyEnabled = false
+local NoClipEnabled = false
 local WalkSpeedValue = 50
 local JumpPowerValue = 100
-local KillAuraRange = 30
-local AttackDelay = 0.5
-local lastAttack = 0
 
--- Storage for ESP
+-- Visual
+local ESPEnabled = false
+local ShowHitBoxes = false
+
+-- God Mode
+local GodModeEnabled = false
+local godModeConn = nil
+
+-- Storage
 local ESPObjects = {}
+local HitBoxParts = {}
 
--- ================== GET ALL PLAYERS ==================
-local function GetAllPlayers()
+-- ================== CARI HITBOX PLAYER ==================
+local function GetPlayerHitBox(player)
+    local char = player.Character
+    if not char then return nil end
+    
+    -- Cari HitBox (dari console terlihat ada banyak "HitBox | Part")
+    local hitbox = char:FindFirstChild("HitBox")
+    if not hitbox then
+        -- Cari part yang namanya mengandung "HitBox"
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and string.find(string.lower(part.Name), "hitbox") then
+                return part
+            end
+        end
+        -- Fallback ke HumanoidRootPart
+        return char:FindFirstChild("HumanoidRootPart")
+    end
+    return hitbox
+end
+
+-- ================== CARI SEMUA HITBOX DI MAP ==================
+local function FindAllHitBoxes()
+    local hitboxes = {}
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and string.find(string.lower(obj.Name), "hitbox") then
+            table.insert(hitboxes, obj)
+        end
+    end
+    return hitboxes
+end
+
+-- ================== EXPAND HITBOX (Bikin gampang kena serangan) ==================
+local function ExpandHitBoxes(state)
+    HitBoxExpanderEnabled = state
+    
+    if state then
+        local hitboxes = FindAllHitBoxes()
+        for _, hitbox in pairs(hitboxes) do
+            -- Perbesar hitbox
+            hitbox.Size = hitbox.Size * 2
+            -- Bikin transparan biar ga ganggu visual
+            hitbox.Transparency = 0.8
+        end
+        Rayfield:Notify({Title = "HitBox Expander", Content = "All hitboxes enlarged!", Duration = 2})
+    else
+        local hitboxes = FindAllHitBoxes()
+        for _, hitbox in pairs(hitboxes) do
+            hitbox.Size = hitbox.Size / 2
+        end
+    end
+end
+
+-- ================== GOD MODE ==================
+local function SetupGodMode(state)
+    GodModeEnabled = state
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    
+    if state then
+        hum.BreakJointsOnDeath = false
+        local maxHealth = hum.MaxHealth
+        
+        if godModeConn then godModeConn:Disconnect() end
+        godModeConn = hum.HealthChanged:Connect(function()
+            if GodModeEnabled and hum and hum.Parent and hum.Health < maxHealth then
+                hum.Health = maxHealth
+            end
+        end)
+        
+        Rayfield:Notify({Title = "God Mode", Content = "Activated!", Duration = 2})
+    else
+        if godModeConn then godModeConn:Disconnect() end
+        godModeConn = nil
+    end
+end
+
+-- ================== GET ALIVE PLAYERS ==================
+local function GetAlivePlayers()
     local players = {}
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
-            table.insert(players, player)
+            local char = player.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 then
+                    table.insert(players, player)
+                end
+            end
         end
     end
     return players
 end
 
--- ================== FIND CLOSEST PLAYER ==================
+-- ================== GET CLOSEST PLAYER ==================
 local function GetClosestPlayer()
     local closest = nil
-    local closestDist = KillAuraRange
+    local closestDist = AttackRange
     local myChar = LocalPlayer.Character
     if not myChar then return nil end
+    
     local myPos = myChar:FindFirstChild("HumanoidRootPart")
     if not myPos then return nil end
     
-    for _, player in pairs(GetAllPlayers()) do
-        local char = player.Character
-        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid") then
-            local hrp = char.HumanoidRootPart
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local dist = (myPos.Position - hrp.Position).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
-                    closest = player
-                end
+    for _, player in pairs(GetAlivePlayers()) do
+        local hitbox = GetPlayerHitBox(player)
+        if hitbox then
+            local dist = (myPos.Position - hitbox.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closest = player
             end
         end
     end
-    return closest
+    return closest, closestDist
 end
 
--- ================== ATTACK PLAYER ==================
-local function AttackPlayer(target)
+-- ================== AIMBOT (AUTO AIM KE HITBOX) ==================
+local function DoAimbot(target)
+    if not AimbotEnabled then return end
     if not target then return end
-    local char = target.Character
-    if not char then return end
     
-    -- Cari tool/weapon yang bisa digunakan
-    local backpack = LocalPlayer.Backpack
-    local charTools = LocalPlayer.Character:GetChildren()
+    local hitbox = GetPlayerHitBox(target)
+    if not hitbox then return end
     
-    -- Equip weapon if available
-    for _, tool in pairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            tool.Parent = LocalPlayer.Character
-        end
-    end
-    
-    -- Attack dengan tool pertama yang ada
-    for _, tool in pairs(LocalPlayer.Character:GetChildren()) do
-        if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
-            local mouse = LocalPlayer:GetMouse()
-            local args = {
-                [1] = char.HumanoidRootPart.CFrame.p
-            }
-            -- Kirim remote event (sesuaikan dengan game)
-            game:GetService("ReplicatedStorage"):FindFirstChild("Attack"):FireServer(unpack(args))
-        end
-    end
+    -- Arahkan kamera ke hitbox target
+    local cameraCF = CFrame.new(Camera.CFrame.Position, hitbox.Position)
+    Camera.CFrame = cameraCF
 end
 
--- ================== AUTO FARM / AUTO BATTLE ==================
-local function AutoFarm()
-    if not AutoFarmEnabled then return end
-    local target = GetClosestPlayer()
-    if target and tick() - lastAttack >= AttackDelay then
-        AttackPlayer(target)
+-- ================== AUTO ATTACK ==================
+local function DoAttack(target)
+    if not target then return end
+    if tick() - lastAttack < AttackDelay then return end
+    
+    local hitbox = GetPlayerHitBox(target)
+    if not hitbox then return end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+    
+    local distance = (myHrp.Position - hitbox.Position).Magnitude
+    
+    if distance <= AttackRange then
+        -- Method 1: Fire remote events
+        local replicatedStorage = game:GetService("ReplicatedStorage")
+        for _, remote in pairs(replicatedStorage:GetDescendants()) do
+            if remote:IsA("RemoteEvent") then
+                pcall(function() remote:FireServer(hitbox) end)
+            end
+        end
+        
+        -- Method 2: Simulate click on hitbox
+        local mouse = LocalPlayer:GetMouse()
+        local oldTarget = mouse.Target
+        mouse.Target = hitbox
+        pcall(function()
+            local VirtualUser = game:GetService("VirtualUser")
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton1(Vector2.new(0,0))
+        end)
+        mouse.Target = oldTarget
+        
+        -- Method 3: Activate tool
+        for _, tool in pairs(myChar:GetChildren()) do
+            if tool:IsA("Tool") then
+                pcall(function() tool:Activate() end)
+            end
+        end
+        
         lastAttack = tick()
     end
 end
 
--- ================== ESP SYSTEM ==================
+-- ================== AUTO FOLLOW ==================
+local function FollowTarget(target)
+    if not AutoFarmEnabled then return end
+    if not target then return end
+    
+    local myChar = LocalPlayer.Character
+    local targetHitbox = GetPlayerHitBox(target)
+    
+    if not myChar or not targetHitbox then return end
+    
+    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp then return end
+    
+    local distance = (myHrp.Position - targetHitbox.Position).Magnitude
+    
+    -- Teleport kalau terlalu jauh
+    if distance > FollowDistance + 15 then
+        myHrp.CFrame = CFrame.new(targetHitbox.Position) * CFrame.new(0, 0, FollowDistance)
+    else
+        -- Gerak ke arah target
+        local direction = (targetHitbox.Position - myHrp.Position).Unit
+        local hum = myChar:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:MoveTo(myHrp.Position + direction * 5)
+        end
+    end
+end
+
+-- ================== AUTO FARM LOOP ==================
+local function AutoFarmLoop()
+    if not (AutoFarmEnabled or AimbotEnabled) then return end
+    
+    local target, dist = GetClosestPlayer()
+    
+    if target then
+        targetPlayer = target
+        
+        if AutoFarmEnabled then
+            FollowTarget(target)
+            if dist <= AttackRange then
+                DoAttack(target)
+            end
+        end
+        
+        if AimbotEnabled then
+            DoAimbot(target)
+        end
+    end
+end
+
+-- ================== MOVEMENT HACKS ==================
+local function ApplyMovementHacks()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if SpeedHackEnabled then
+            hum.WalkSpeed = WalkSpeedValue
+        end
+        
+        if JumpHackEnabled then
+            hum.JumpPower = JumpPowerValue
+            hum.UseJumpPower = true
+        end
+    end
+end
+
+-- ================== FLY FUNCTION ==================
+local flyConnection = nil
+local function StartFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+    if not torso then return end
+    
+    local bodyGyro = Instance.new("BodyGyro", torso)
+    bodyGyro.P = 9e4
+    bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    
+    local bodyVelocity = Instance.new("BodyVelocity", torso)
+    bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not FlyEnabled then return end
+        
+        local moveDirection = Vector3.zero
+        local uis = UserInputService
+        if uis:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + Camera.CFrame.LookVector end
+        if uis:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - Camera.CFrame.LookVector end
+        if uis:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - Camera.CFrame.RightVector end
+        if uis:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + Camera.CFrame.RightVector end
+        if uis:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+        if uis:IsKeyDown(Enum.KeyCode.LeftShift) then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
+        
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
+            bodyVelocity.Velocity = moveDirection * 100
+            bodyGyro.CFrame = CFrame.new(torso.Position, torso.Position + moveDirection)
+        else
+            bodyVelocity.Velocity = Vector3.zero
+        end
+    end)
+end
+
+local function StopFly()
+    if flyConnection then flyConnection:Disconnect() end
+    flyConnection = nil
+end
+
+-- ================== ESP ==================
 local function CreateESP(player)
-    if player == LocalPlayer then return end
+    if player == LocalPlayer or ESPObjects[player] then return end
     
     local box = Drawing.new("Square")
     box.Thickness = 1.5
@@ -120,308 +351,141 @@ local function CreateESP(player)
     nameText.Color = Color3.fromRGB(255, 255, 255)
     nameText.Visible = false
     
-    local distText = Drawing.new("Text")
-    distText.Size = 10
-    distText.Center = true
-    distText.Outline = true
-    distText.Color = Color3.fromRGB(200, 200, 200)
-    distText.Visible = false
+    local healthText = Drawing.new("Text")
+    healthText.Size = 10
+    healthText.Center = true
+    healthText.Outline = true
+    healthText.Color = Color3.fromRGB(0, 255, 0)
+    healthText.Visible = false
     
-    local healthBar = Drawing.new("Square")
-    healthBar.Thickness = 0
-    healthBar.Filled = true
-    healthBar.Color = Color3.fromRGB(0, 255, 0)
-    healthBar.Visible = false
-    
-    ESPObjects[player] = {box, nameText, distText, healthBar}
+    ESPObjects[player] = {box, nameText, healthText}
 end
 
 local function UpdateESP()
     if not ESPEnabled then return end
     
     for player, objects in pairs(ESPObjects) do
-        local box, nameText, distText, healthBar = unpack(objects)
+        local box, nameText, healthText = unpack(objects)
+        local hitbox = GetPlayerHitBox(player)
         local char = player.Character
         
-        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
-            local hrp = char.HumanoidRootPart
-            local head = char.Head
+        if hitbox and char then
             local hum = char:FindFirstChildOfClass("Humanoid")
-            local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+            local pos, onScreen = Camera:WorldToViewportPoint(hitbox.Position)
             
             if onScreen and hum and hum.Health > 0 then
-                -- Hitung posisi box
-                local top = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 1, 0))
-                local bottom = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
-                local height = math.abs(top.Y - bottom.Y)
-                local width = height * 0.6
-                
-                -- Box
-                box.Size = Vector2.new(width, height)
-                box.Position = Vector2.new(pos.X - width/2, top.Y)
+                box.Size = Vector2.new(40, 60)
+                box.Position = Vector2.new(pos.X - 20, pos.Y - 30)
                 box.Visible = true
                 
-                -- Nama
-                nameText.Position = Vector2.new(pos.X, top.Y - 12)
+                nameText.Position = Vector2.new(pos.X, pos.Y - 40)
                 nameText.Text = player.DisplayName or player.Name
                 nameText.Visible = true
                 
-                -- Jarak
-                local distance = (Camera.CFrame.Position - hrp.Position).Magnitude
-                distText.Position = Vector2.new(pos.X, bottom.Y + 12)
-                distText.Text = math.floor(distance) .. "m"
-                distText.Visible = true
-                
-                -- Health Bar
-                if hum then
-                    local healthPercent = hum.Health / hum.MaxHealth
-                    healthBar.Size = Vector2.new(width * healthPercent, 4)
-                    healthBar.Position = Vector2.new(pos.X - width/2, bottom.Y + 2)
-                    healthBar.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
-                    healthBar.Visible = true
-                end
+                healthText.Position = Vector2.new(pos.X, pos.Y + 35)
+                healthText.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+                healthText.Visible = true
             else
                 box.Visible = false
                 nameText.Visible = false
-                distText.Visible = false
-                healthBar.Visible = false
+                healthText.Visible = false
             end
         end
     end
 end
 
--- ================== SPEED & JUMP HACK ==================
-local function ApplyMovementHacks()
-    local char = LocalPlayer.Character
-    if not char then return end
+-- ================== SHOW HITBOXES VISUAL ==================
+local function ToggleShowHitBoxes(state)
+    ShowHitBoxes = state
     
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        if SpeedHackEnabled then
-            hum.WalkSpeed = WalkSpeedValue
+    for _, hitbox in pairs(FindAllHitBoxes()) do
+        if state then
+            hitbox.Transparency = 0.5
+            hitbox.Color = Color3.fromRGB(255, 0, 0)
         else
-            hum.WalkSpeed = 16
-        end
-        
-        if JumpHackEnabled then
-            hum.JumpPower = JumpPowerValue
-            hum.UseJumpPower = true
-        else
-            hum.JumpPower = 50
+            hitbox.Transparency = 1
         end
     end
 end
 
--- ================== CREATE GUI ==================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "ElementArenaGUI"
+-- ================== CREATE RAYFIELD UI ==================
+local Window = Rayfield:CreateWindow({
+    Name = "ELEMENT ARENA | ADVANCED",
+    Icon = 0,
+    LoadingTitle = "Element Arena",
+    LoadingSubtitle = "Based on Console Analysis",
+    Theme = "Default",
+    ConfigurationSaving = {Enabled = true, FolderName = "ElementArena", FileName = "Settings"}
+})
 
-local function CreateMainGUI()
-    -- Main Frame
-    local MainFrame = Instance.new("Frame", ScreenGui)
-    MainFrame.Size = UDim2.new(0, 250, 0, 350)
-    MainFrame.Position = UDim2.new(0.02, 0, 0.1, 0)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-    MainFrame.BackgroundTransparency = 0.05
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
-    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
-    
-    -- Title
-    local Title = Instance.new("TextLabel", MainFrame)
-    Title.Size = UDim2.new(1, 0, 0, 35)
-    Title.Position = UDim2.new(0, 0, 0, 0)
-    Title.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-    Title.Text = "ELEMENT ARENA | EXPLOIT"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 14
-    Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 8)
-    
-    -- Scrolling Frame untuk buttons
-    local ScrollFrame = Instance.new("ScrollingFrame", MainFrame)
-    ScrollFrame.Size = UDim2.new(1, -10, 1, -45)
-    ScrollFrame.Position = UDim2.new(0, 5, 0, 40)
-    ScrollFrame.BackgroundTransparency = 1
-    ScrollFrame.ScrollBarThickness = 4
-    ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    
-    local UILayout = Instance.new("UIListLayout", ScrollFrame)
-    UILayout.Padding = UDim.new(0, 5)
-    UILayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    
-    -- Function to create toggle button
-    local function CreateToggle(parent, text, color, defaultValue, callback)
-        local frame = Instance.new("Frame", parent)
-        frame.Size = UDim2.new(0.95, 0, 0, 35)
-        frame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 5)
-        
-        local label = Instance.new("TextLabel", frame)
-        label.Size = UDim2.new(0.7, 0, 1, 0)
-        label.Position = UDim2.new(0.05, 0, 0, 0)
-        label.BackgroundTransparency = 1
-        label.Text = text
-        label.TextColor3 = color
-        label.Font = Enum.Font.Gotham
-        label.TextSize = 12
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        
-        local toggle = Instance.new("TextButton", frame)
-        toggle.Size = UDim2.new(0, 60, 0, 25)
-        toggle.Position = UDim2.new(0.75, 0, 0.5, -12.5)
-        toggle.BackgroundColor3 = defaultValue and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(100, 100, 100)
-        toggle.Text = defaultValue and "ON" or "OFF"
-        toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        toggle.Font = Enum.Font.GothamBold
-        toggle.TextSize = 11
-        Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 4)
-        
-        local state = defaultValue
-        toggle.MouseButton1Click:Connect(function()
-            state = not state
-            toggle.BackgroundColor3 = state and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(100, 100, 100)
-            toggle.Text = state and "ON" or "OFF"
-            callback(state)
-        end)
-        
-        return frame
-    end
-    
-    -- Create buttons
-    CreateToggle(ScrollFrame, "ESP Player", Color3.fromRGB(255, 100, 100), false, function(v)
-        ESPEnabled = v
-        if v then
-            for _, player in pairs(Players:GetPlayers()) do
-                if not ESPObjects[player] then
-                    CreateESP(player)
-                end
-            end
-        else
-            for _, objects in pairs(ESPObjects) do
-                for _, obj in pairs(objects) do
-                    obj.Visible = false
-                end
-            end
-        end
-    end)
-    
-    CreateToggle(ScrollFrame, "Kill Aura", Color3.fromRGB(255, 50, 50), false, function(v)
-        KillAuraEnabled = v
-    end)
-    
-    local speedSliderLabel = nil
-    CreateToggle(ScrollFrame, "Speed Hack", Color3.fromRGB(100, 200, 255), false, function(v)
-        SpeedHackEnabled = v
-        ApplyMovementHacks()
-    end)
-    
-    CreateToggle(ScrollFrame, "Jump Hack", Color3.fromRGB(100, 200, 255), false, function(v)
-        JumpHackEnabled = v
-        ApplyMovementHacks()
-    end)
-    
-    CreateToggle(ScrollFrame, "Auto Farm", Color3.fromRGB(255, 200, 100), false, function(v)
-        AutoFarmEnabled = v
-    end)
-    
-    -- Slider untuk Kill Aura Range
-    local rangeFrame = Instance.new("Frame", ScrollFrame)
-    rangeFrame.Size = UDim2.new(0.95, 0, 0, 50)
-    rangeFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    Instance.new("UICorner", rangeFrame).CornerRadius = UDim.new(0, 5)
-    
-    local rangeLabel = Instance.new("TextLabel", rangeFrame)
-    rangeLabel.Size = UDim2.new(1, 0, 0, 20)
-    rangeLabel.Position = UDim2.new(0.05, 0, 0, 5)
-    rangeLabel.BackgroundTransparency = 1
-    rangeLabel.Text = "Kill Aura Range: " .. KillAuraRange
-    rangeLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
-    rangeLabel.Font = Enum.Font.Gotham
-    rangeLabel.TextSize = 11
-    rangeLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local slider = Instance.new("TextBox", rangeFrame)
-    slider.Size = UDim2.new(0.8, 0, 0, 22)
-    slider.Position = UDim2.new(0.1, 0, 0, 25)
-    slider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-    slider.Text = tostring(KillAuraRange)
-    slider.TextColor3 = Color3.fromRGB(255, 255, 255)
-    slider.Font = Enum.Font.Gotham
-    slider.TextSize = 12
-    Instance.new("UICorner", slider).CornerRadius = UDim.new(0, 4)
-    
-    slider.FocusLost:Connect(function()
-        local value = tonumber(slider.Text)
-        if value then
-            KillAuraRange = math.clamp(value, 10, 100)
-            slider.Text = tostring(KillAuraRange)
-            rangeLabel.Text = "Kill Aura Range: " .. KillAuraRange
-        else
-            slider.Text = tostring(KillAuraRange)
-        end
-    end)
-    
-    -- Close button
-    local CloseBtn = Instance.new("TextButton", MainFrame)
-    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-    CloseBtn.Position = UDim2.new(1, -35, 0, 3)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    CloseBtn.Text = "X"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize = 14
-    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-    
-    CloseBtn.MouseButton1Click:Connect(function()
-        ScreenGui:Destroy()
-    end)
-end
+-- Combat Tab
+local CombatTab = Window:CreateTab("Combat", 0)
 
--- ================== INITIALIZE ESP FOR EXISTING PLAYERS ==================
-for _, player in pairs(Players:GetPlayers()) do
-    CreateESP(player)
-end
+CombatTab:CreateSection("Auto Farm")
+CombatTab:CreateToggle({Name = "Auto Farm (Follow & Attack)", CurrentValue = false, Flag = "AutoFarm", Callback = function(v) AutoFarmEnabled = v end})
+CombatTab:CreateToggle({Name = "Aimbot (Auto Aim to HitBox)", CurrentValue = false, Flag = "Aimbot", Callback = function(v) AimbotEnabled = v end})
+CombatTab:CreateSlider({Name = "Attack Range", Range = {5, 50}, Increment = 1, Suffix = "studs", CurrentValue = AttackRange, Flag = "AttackRange", Callback = function(v) AttackRange = v end})
+CombatTab:CreateSlider({Name = "Follow Distance", Range = {3, 20}, Increment = 1, Suffix = "studs", CurrentValue = FollowDistance, Flag = "FollowDistance", Callback = function(v) FollowDistance = v end})
+CombatTab:CreateSlider({Name = "Attack Delay", Range = {0.1, 1}, Increment = 0.05, Suffix = "sec", CurrentValue = AttackDelay, Flag = "AttackDelay", Callback = function(v) AttackDelay = v end})
 
-Players.PlayerAdded:Connect(function(player)
-    CreateESP(player)
-end)
+CombatTab:CreateSection("HitBox")
+CombatTab:CreateToggle({Name = "Expand HitBoxes (Easy to Hit)", CurrentValue = false, Flag = "ExpandHitBox", Callback = function(v) ExpandHitBoxes(v) end})
+CombatTab:CreateToggle({Name = "Show HitBoxes Visual", CurrentValue = false, Flag = "ShowHitBox", Callback = function(v) ToggleShowHitBoxes(v) end})
 
-Players.PlayerRemoving:Connect(function(player)
-    if ESPObjects[player] then
-        for _, obj in pairs(ESPObjects[player]) do
-            obj:Remove()
-        end
-        ESPObjects[player] = nil
-    end
-end)
+CombatTab:CreateSection("God Mode")
+CombatTab:CreateToggle({Name = "God Mode (Infinite Health)", CurrentValue = false, Flag = "GodMode", Callback = function(v) SetupGodMode(v) end})
 
--- ================== MAIN LOOP ==================
+-- Movement Tab
+local MovementTab = Window:CreateTab("Movement", 1)
+
+MovementTab:CreateSection("Speed & Jump")
+MovementTab:CreateToggle({Name = "Speed Hack", CurrentValue = false, Flag = "SpeedHack", Callback = function(v) SpeedHackEnabled = v; ApplyMovementHacks() end})
+MovementTab:CreateSlider({Name = "Walk Speed", Range = {16, 250}, Increment = 1, Suffix = "speed", CurrentValue = WalkSpeedValue, Flag = "WalkSpeed", Callback = function(v) WalkSpeedValue = v; if SpeedHackEnabled then ApplyMovementHacks() end end})
+MovementTab:CreateToggle({Name = "Jump Hack", CurrentValue = false, Flag = "JumpHack", Callback = function(v) JumpHackEnabled = v; ApplyMovementHacks() end})
+MovementTab:CreateSlider({Name = "Jump Power", Range = {50, 300}, Increment = 5, Suffix = "power", CurrentValue = JumpPowerValue, Flag = "JumpPower", Callback = function(v) JumpPowerValue = v; if JumpHackEnabled then ApplyMovementHacks() end end})
+
+MovementTab:CreateSection("Flight")
+MovementTab:CreateToggle({Name = "Fly Mode", CurrentValue = false, Flag = "FlyMode", Callback = function(v) FlyEnabled = v; if v then StartFly() else StopFly() end end})
+
+-- Visual Tab
+local VisualTab = Window:CreateTab("Visual", 2)
+
+VisualTab:CreateSection("ESP")
+VisualTab:CreateToggle({Name = "ESP Player", CurrentValue = false, Flag = "ESP", Callback = function(v) 
+    ESPEnabled = v
+    if v then for _, p in pairs(Players:GetPlayers()) do if not ESPObjects[p] then CreateESP(p) end end end
+end})
+
+-- Info Tab
+local InfoTab = Window:CreateTab("Info", 3)
+
+InfoTab:CreateSection("Game Structure Info")
+InfoTab:CreateParagraph({Title = "Found in Console", Content = "- HitBox Parts detected\n- HumanoidRootPart\n- Head, Torso, Arms, Legs\n- Handle (Weapon parts)\n- UnionOperation"})
+InfoTab:CreateParagraph({Title = "Credits", Content = "Element Arena Exploit\nBased on Delta Console Analysis"})
+
+-- ================== INIT ==================
+for _, player in pairs(Players:GetPlayers()) do CreateESP(player) end
+
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(function(p) if ESPObjects[p] then for _, o in pairs(ESPObjects[p]) do o:Remove() end ESPObjects[p] = nil end end)
+
+-- Main Loop
 RunService.RenderStepped:Connect(function()
-    if ESPEnabled then
-        UpdateESP()
-    end
-    
-    if KillAuraEnabled or AutoFarmEnabled then
-        AutoFarm()
-    end
-    
+    UpdateESP()
+    AutoFarmLoop()
     ApplyMovementHacks()
 end)
 
--- Reset movement ketika character respawn
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     ApplyMovementHacks()
+    if GodModeEnabled then SetupGodMode(true) end
+    if FlyEnabled then StartFly() end
 end)
 
--- ================== SHOW GUI ==================
-CreateMainGUI()
-
--- Print status
 print("========================================")
 print("ELEMENT ARENA EXPLOIT LOADED!")
-print("Fitur: ESP, Kill Aura, Speed, Jump, Auto Farm")
+print("Based on Console Analysis:")
+print("- HitBox System Found")
+print("- HumanoidRootPart & Body Parts")
 print("========================================")
