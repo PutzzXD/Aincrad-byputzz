@@ -1,4 +1,4 @@
--- ================== DRIP CLIENT V9 - KAVO UI ==================
+-- ================== DRIP CLIENT V9 - LINORIA UI ==================
 -- Developer: Putzzdev | WA: 088976255131
 
 local Players          = game:GetService("Players")
@@ -72,7 +72,7 @@ local function getTimeRemaining(exp)
     local h = math.floor((rem%86400)/3600)
     local m = math.floor((rem%3600)/60)
     local s = rem%60
-    return d,h,m,s,string.format("%dh %02dj %02dm %02dd",d,h,m,s)
+    return d,h,m,s,string.format("%dd %02dh %02dm %02ds",d,h,m,s)
 end
 
 local function checkKeyExpiry(inputKey)
@@ -389,7 +389,6 @@ task.spawn(function()
     statusLabel.BackgroundTransparency=1; statusLabel.Text=""
     statusLabel.TextColor3=Color3.fromRGB(255,100,100); statusLabel.Font=Enum.Font.GothamBold; statusLabel.TextSize=11
 
-    -- Progress bar (muncul setelah key berhasil)
     local progBg=Instance.new("Frame",KeyFrame)
     progBg.Size=UDim2.new(0.85,0,0,6); progBg.Position=UDim2.new(0.075,0,0,258)
     progBg.BackgroundColor3=Color3.fromRGB(35,35,45); progBg.Visible=false; progBg.BorderSizePixel=0
@@ -408,13 +407,11 @@ task.spawn(function()
                 statusLabel.Text="✅ "..msg; statusLabel.TextColor3=Color3.fromRGB(0,255,120)
                 submitBtn.Text="✅ TERVERIFIKASI!"; submitBtn.BackgroundColor3=Color3.fromRGB(0,160,80)
                 keyBox.Visible=false; getKeyBtn.Visible=false
-                -- Animasi progress bar
                 progBg.Visible=true
                 local function setP(p,t) TweenService:Create(progBar,TweenInfo.new(0.35,Enum.EasingStyle.Quart),{Size=UDim2.new(p,0,1,0)}):Play(); statusLabel.Text=t end
                 setP(0.3,"⚙ Memuat modul..."); task.wait(0.5)
                 setP(0.65,"🔒 Mengautentikasi..."); task.wait(0.5)
                 setP(1.0,"✅ Siap!"); task.wait(0.4)
-                -- Fade out dan destroy
                 TweenService:Create(KeyFrame,TweenInfo.new(0.25),{BackgroundTransparency=1}):Play()
                 for _,v in pairs(KeyFrame:GetDescendants()) do
                     if v:IsA("TextLabel") or v:IsA("TextButton") or v:IsA("TextBox") then
@@ -432,232 +429,350 @@ task.spawn(function()
     end)
 end)
 
--- ================== MAIN SCRIPT (KAVO UI) ==================
+-- ================== MAIN SCRIPT (LINORIA UI) ==================
 function loadMainScript()
-    local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
-    local Window = Library.CreateLib("Drip Client | Putzzdev", "Ocean")
+    local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
+    local Window = Library:CreateWindow("Drip Client | Putzzdev", {
+        Resizable = true,
+        Size = Vector2.new(450, 520),
+        Center = true,
+        ShowCustomCursor = true,
+    })
 
     -- ======= TAB MAIN =======
-    local MainTab = Window:NewTab("Main")
-    local MainSection = MainTab:NewSection("Movement")
-
-    MainSection:NewToggle("Fly Mode", "Terbang bebas", function(s)
-        flyEnabled=s; if s then startFlyMode() else stopFlyMode() end
-    end)
-    MainSection:NewToggle("Speed Boost", "Kecepatan x4", function(s)
-        speedEnabled=s
-        local hum=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed=s and fastSpeed or normalSpeed end
-    end)
-    MainSection:NewSlider("Fly Speed", "Atur kecepatan terbang", 200, 20, function(v)
-        flySpeed=v
-    end)
-    MainSection:NewToggle("NoClip", "Tembus tembok", function(s)
-        noclipEnabled=s; if s then startNoclip() else stopNoclip() end
-    end)
-    MainSection:NewToggle("Infinity Jump", "Lompat terus-menerus", function(s)
-        infinityJumpEnabled=s
-    end)
-
-    local CombatSection = MainTab:NewSection("Combat & Misc")
-    CombatSection:NewToggle("God Mode", "Tidak bisa mati", function(s)
-        antiDamageEnabled=s; if s then setupAntiDamage()
-        else if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect(); antiDamageHeartbeat=nil end end
-    end)
-    CombatSection:NewToggle("Spin Muter", "Karakter berputar", function(s)
-        toggleSpin(s)
-    end)
-    CombatSection:NewSlider("Spin Speed", "Atur kecepatan spin", 200, 10, function(v)
-        spinSpeed=v
-    end)
-    CombatSection:NewToggle("Invisible Mode", "Tidak terlihat", function(s)
-        toggleInvisible(s)
-    end)
+    local MainTab = Window:AddTab("Main")
+    
+    -- Movement Section
+    local MovementSection = MainTab:AddLeftGroupbox("Movement")
+    
+    MovementSection:AddToggle("FlyMode", {
+        Text = "Fly Mode",
+        Description = "Terbang bebas di sekitar peta",
+        Default = false,
+        Callback = function(s)
+            flyEnabled = s
+            if s then startFlyMode() else stopFlyMode() end
+        end
+    })
+    
+    MovementSection:AddToggle("SpeedBoost", {
+        Text = "Speed Boost",
+        Description = "Kecepatan jalan x4",
+        Default = false,
+        Callback = function(s)
+            speedEnabled = s
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = s and fastSpeed or normalSpeed end
+        end
+    })
+    
+    MovementSection:AddSlider("FlySpeed", {
+        Text = "Fly Speed",
+        Description = "Atur kecepatan terbang",
+        Default = 100,
+        Min = 20,
+        Max = 200,
+        Rounding = 1,
+        Callback = function(v)
+            flySpeed = v
+        end
+    })
+    
+    MovementSection:AddToggle("NoClip", {
+        Text = "NoClip",
+        Description = "Tembus dinding",
+        Default = false,
+        Callback = function(s)
+            noclipEnabled = s
+            if s then startNoclip() else stopNoclip() end
+        end
+    })
+    
+    MovementSection:AddToggle("InfinityJump", {
+        Text = "Infinity Jump",
+        Description = "Lompat tanpa batas",
+        Default = false,
+        Callback = function(s)
+            infinityJumpEnabled = s
+        end
+    })
+    
+    -- Combat & Misc Section
+    local CombatSection = MainTab:AddRightGroupbox("Combat & Misc")
+    
+    CombatSection:AddToggle("GodMode", {
+        Text = "God Mode",
+        Description = "Tidak bisa mati",
+        Default = false,
+        Callback = function(s)
+            antiDamageEnabled = s
+            if s then setupAntiDamage()
+            else if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect(); antiDamageHeartbeat = nil end end
+        end
+    })
+    
+    CombatSection:AddToggle("SpinMode", {
+        Text = "Spin Muter",
+        Description = "Karakter berputar terus",
+        Default = false,
+        Callback = function(s)
+            toggleSpin(s)
+        end
+    })
+    
+    CombatSection:AddSlider("SpinSpeed", {
+        Text = "Spin Speed",
+        Description = "Atur kecepatan spin",
+        Default = 50,
+        Min = 10,
+        Max = 200,
+        Rounding = 1,
+        Callback = function(v)
+            spinSpeed = v
+        end
+    })
+    
+    CombatSection:AddToggle("InvisibleMode", {
+        Text = "Invisible Mode",
+        Description = "Membuat karakter tidak terlihat (eksperimental)",
+        Default = false,
+        Callback = function(s)
+            toggleInvisible(s)
+        end
+    })
 
     -- ======= TAB ESP =======
-    local ESPTab = Window:NewTab("ESP System")
-    local ESPSection = ESPTab:NewSection("ESP Options")
-
-    ESPSection:NewToggle("ESP Box", "Kotak di sekitar player", function(s)
-        espEnabled=s
-    end)
-    ESPSection:NewToggle("ESP Line", "Garis dari bawah layar ke player", function(s)
-        lineEnabled=s
-    end)
-    ESPSection:NewToggle("ESP Skeleton", "Rangka tulang player", function(s)
-        skeletonEnabled=s
-    end)
-    ESPSection:NewToggle("Player Counter", "Hitung player di layar", function(s)
-        playerCounterEnabled=s
-    end)
+    local ESPTab = Window:AddTab("ESP System")
+    
+    local ESPLeftSection = ESPTab:AddLeftGroupbox("ESP Options")
+    
+    ESPLeftSection:AddToggle("ESPBox", {
+        Text = "ESP Box",
+        Description = "Menampilkan kotak di sekitar player",
+        Default = false,
+        Callback = function(s)
+            espEnabled = s
+        end
+    })
+    
+    ESPLeftSection:AddToggle("ESPLine", {
+        Text = "ESP Line",
+        Description = "Garis dari bawah layar ke player",
+        Default = false,
+        Callback = function(s)
+            lineEnabled = s
+        end
+    })
+    
+    ESPLeftSection:AddToggle("ESPSkeleton", {
+        Text = "ESP Skeleton",
+        Description = "Menampilkan rangka tulang player",
+        Default = false,
+        Callback = function(s)
+            skeletonEnabled = s
+        end
+    })
+    
+    ESPLeftSection:AddToggle("PlayerCounter", {
+        Text = "Player Counter",
+        Description = "Menghitung player di layar",
+        Default = false,
+        Callback = function(s)
+            playerCounterEnabled = s
+        end
+    })
+    
+    -- ESP Color Section
+    local ESPRightSection = ESPTab:AddRightGroupbox("ESP Colors")
+    
+    ESPRightSection:AddLabel("Line Color")
+    ESPRightSection:AddColorPicker("LineColor", {
+        Text = "Warna Garis ESP",
+        Default = Color3.fromRGB(255, 0, 0),
+        Callback = function(c)
+            lineColor = c
+        end
+    })
 
     -- ======= TAB UTILITY =======
-    local UtilTab = Window:NewTab("Utility")
-    local TeleportSection = UtilTab:NewSection("Teleport")
-
-    TeleportSection:NewButton("Teleport ke Player", "Pilih dari list", function()
-        -- Buat UI pilih player pakai notification
+    local UtilTab = Window:AddTab("Utility")
+    
+    -- Teleport Section
+    local TeleportSection = UtilTab:AddLeftGroupbox("Teleport")
+    
+    TeleportSection:AddButton("Teleport ke Player", function()
         local pList = {}
         for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then table.insert(pList, p.Name) end
+            if p ~= LocalPlayer then table.insert(pList, p) end
         end
         if #pList == 0 then
-            Library.CreateNotification("Teleport", "Tidak ada player lain di server!", 3)
+            Library:Notification("Teleport", "Tidak ada player lain di server!", 3)
             return
         end
-        -- Tampilkan list via print (Kavo tidak support dropdown native)
-        for i, name in ipairs(pList) do print(i..". "..name) end
-        Library.CreateNotification("Teleport", "Cek output: "..table.concat(pList, ", "), 4)
+        Library:Notification("Teleport", "Gunakan dropdown di bawah untuk teleport", 3)
     end)
-
-    -- Teleport dropdown per player
-    local TpSection = UtilTab:NewSection("Pilih Player")
-    local function refreshTeleportButtons()
+    
+    -- Dropdown Teleport
+    local function getPlayerList()
+        local list = {}
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
-                TpSection:NewButton("TP → "..p.Name, "Teleport ke "..p.Name, function()
-                    local mc=LocalPlayer.Character; local tc=p.Character
-                    if mc and tc then
-                        local mh=mc:FindFirstChild("HumanoidRootPart"); local th=tc:FindFirstChild("HumanoidRootPart")
-                        if mh and th then
-                            mh.CFrame=th.CFrame+Vector3.new(0,3,0)
-                            Library.CreateNotification("Teleport","Berhasil TP ke "..p.Name,2)
-                        end
-                    end
-                end)
+                table.insert(list, p.Name)
             end
         end
+        return list
     end
-    refreshTeleportButtons()
-    TpSection:NewButton("🔄 Refresh Player List", "Update daftar player", function()
-        refreshTeleportButtons()
-        Library.CreateNotification("Refresh","List player diperbarui!",2)
-    end)
-
-    local FreezeSection = UtilTab:NewSection("Freeze")
-    FreezeSection:NewToggle("❄ Freeze All Player (Visual)", "Bekukan semua player di layar kamu", function(s)
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                for _, part in pairs(p.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then pcall(function() part.Anchored=s end) end
+    
+    TeleportSection:AddDropdown("TeleportDropdown", {
+        Text = "Pilih Player",
+        Description = "Pilih player tujuan teleport",
+        Values = getPlayerList(),
+        Default = 1,
+        Callback = function(v)
+            local target = Players:FindFirstChild(v)
+            if target and target.Character then
+                local mc = LocalPlayer.Character
+                local tc = target.Character
+                if mc and tc then
+                    local mh = mc:FindFirstChild("HumanoidRootPart")
+                    local th = tc:FindFirstChild("HumanoidRootPart")
+                    if mh and th then
+                        mh.CFrame = th.CFrame + Vector3.new(0, 3, 0)
+                        Library:Notification("Teleport", "Berhasil TP ke " .. v, 2)
+                    end
                 end
             end
         end
-        Library.CreateNotification("Freeze", s and "Semua player dibekukan!" or "Freeze dinonaktifkan", 2)
+    })
+    
+    TeleportSection:AddButton("Refresh Player List", function()
+        TeleportSection:RemoveDropdown("TeleportDropdown")
+        task.wait(0.1)
+        TeleportSection:AddDropdown("TeleportDropdown", {
+            Text = "Pilih Player",
+            Description = "Pilih player tujuan teleport",
+            Values = getPlayerList(),
+            Default = 1,
+            Callback = function(v)
+                local target = Players:FindFirstChild(v)
+                if target and target.Character then
+                    local mc = LocalPlayer.Character
+                    local tc = target.Character
+                    if mc and tc then
+                        local mh = mc:FindFirstChild("HumanoidRootPart")
+                        local th = tc:FindFirstChild("HumanoidRootPart")
+                        if mh and th then
+                            mh.CFrame = th.CFrame + Vector3.new(0, 3, 0)
+                            Library:Notification("Teleport", "Berhasil TP ke " .. v, 2)
+                        end
+                    end
+                end
+            end
+        })
+        Library:Notification("Refresh", "List player diperbarui!", 2)
     end)
-
-    -- Freeze diri sendiri dengan tombol float
-    local freezeSelfEnabled = false
-    local freezeSelfBtn = nil
-
-    local function applyFreezeSelf(state)
-        freezeSelfEnabled=state
-        local mc=LocalPlayer.Character
-        if mc then local hrp=mc:FindFirstChild("HumanoidRootPart"); if hrp then hrp.Anchored=state end end
-        if freezeSelfBtn then
-            freezeSelfBtn.BackgroundColor3=state and Color3.fromRGB(0,180,255) or Color3.fromRGB(30,30,50)
-            freezeSelfBtn.Text=state and "❄ ON" or "❄ OFF"
+    
+    -- Freeze Section
+    local FreezeSection = UtilTab:AddRightGroupbox("Freeze")
+    
+    FreezeSection:AddToggle("FreezeAll", {
+        Text = "Freeze All Player (Visual)",
+        Description = "Bekukan semua player di layar kamu",
+        Default = false,
+        Callback = function(s)
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    for _, part in pairs(p.Character:GetDescendants()) do
+                        if part:IsA("BasePart") then pcall(function() part.Anchored = s end) end
+                    end
+                end
+            end
+            Library:Notification("Freeze", s and "Semua player dibekukan!" or "Freeze dinonaktifkan", 2)
         end
-    end
-
+    })
+    
+    -- Freeze Self Section
+    local freezeSelfEnabled = false
+    
+    FreezeSection:AddToggle("FreezeSelf", {
+        Text = "Freeze Diri",
+        Description = "Bekukan karakter sendiri",
+        Default = false,
+        Callback = function(s)
+            freezeSelfEnabled = s
+            local mc = LocalPlayer.Character
+            if mc then
+                local hrp = mc:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.Anchored = s end
+            end
+        end
+    })
+    
     LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(0.5)
-        if freezeSelfEnabled then local hrp=char:FindFirstChild("HumanoidRootPart"); if hrp then hrp.Anchored=true end end
-    end)
-
-    FreezeSection:NewToggle("❄ Freeze Diri (Tombol Luar)", "Munculkan tombol freeze di luar menu", function(s)
-        if s then
-            if not freezeSelfBtn then
-                local sg = game.CoreGui:FindFirstChild("DripClient") or game.CoreGui:FindFirstChild("FreezeSelfGui")
-                    or Instance.new("ScreenGui", game.CoreGui)
-                sg.Name = "FreezeSelfGui"
-                freezeSelfBtn=Instance.new("TextButton",sg)
-                freezeSelfBtn.Size=UDim2.new(0,75,0,38); freezeSelfBtn.Position=UDim2.new(1,-90,0,10)
-                freezeSelfBtn.BackgroundColor3=Color3.fromRGB(30,30,50); freezeSelfBtn.BorderSizePixel=0
-                freezeSelfBtn.Text="❄ OFF"; freezeSelfBtn.TextColor3=Color3.fromRGB(0,220,255)
-                freezeSelfBtn.Font=Enum.Font.GothamBold; freezeSelfBtn.TextSize=13; freezeSelfBtn.ZIndex=20
-                Instance.new("UICorner",freezeSelfBtn).CornerRadius=UDim.new(0,12)
-                local fss=Instance.new("UIStroke",freezeSelfBtn); fss.Color=Color3.fromRGB(0,200,255); fss.Thickness=1.5
-
-                -- Drag + click threshold sistem
-                local drag=false; local moved=false; local sx,sy,px,py=0,0,0,0
-                local THRESH=6
-                freezeSelfBtn.InputBegan:Connect(function(inp)
-                    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-                        drag=true; moved=false
-                        sx=inp.Position.X; sy=inp.Position.Y
-                        px=freezeSelfBtn.Position.X.Offset; py=freezeSelfBtn.Position.Y.Offset
-                    end
-                end)
-                freezeSelfBtn.InputEnded:Connect(function(inp)
-                    if inp.UserInputType==Enum.UserInputType.MouseButton1 or inp.UserInputType==Enum.UserInputType.Touch then
-                        if not moved then applyFreezeSelf(not freezeSelfEnabled) end
-                        drag=false; moved=false
-                    end
-                end)
-                RunService.RenderStepped:Connect(function()
-                    if not drag then return end
-                    local m=UserInputService:GetMouseLocation()
-                    local dx=m.X-sx; local dy=m.Y-sy
-                    if math.abs(dx)>THRESH or math.abs(dy)>THRESH then moved=true end
-                    if moved then
-                        local vp=Camera.ViewportSize
-                        freezeSelfBtn.Position=UDim2.new(0,math.clamp(px+dx,0,vp.X-75),0,math.clamp(py+dy,0,vp.Y-38))
-                    end
-                end)
-
-                -- Animasi masuk
-                freezeSelfBtn.Size=UDim2.new(0,0,0,38)
-                TweenService:Create(freezeSelfBtn,TweenInfo.new(0.2,Enum.EasingStyle.Back),{Size=UDim2.new(0,75,0,38)}):Play()
-            else freezeSelfBtn.Visible=true end
-        else
-            applyFreezeSelf(false)
-            if freezeSelfBtn then
-                TweenService:Create(freezeSelfBtn,TweenInfo.new(0.15),{Size=UDim2.new(0,0,0,38)}):Play()
-                task.delay(0.2,function() if freezeSelfBtn then freezeSelfBtn.Visible=false end end)
-            end
+        if freezeSelfEnabled then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = true end
         end
     end)
 
     -- ======= TAB INFO =======
-    local InfoTab = Window:NewTab("Info")
-    local InfoSection = InfoTab:NewSection("Informasi Lisensi")
-
-    InfoSection:NewLabel("Developer: Putzzdev")
-    InfoSection:NewLabel("WhatsApp: 088976255131")
-    InfoSection:NewLabel("Executor: "..userExecutor)
-    InfoSection:NewLabel("Jenis Paket: "..keyJenis)
-
-    local countdownLabel = nil
-    InfoSection:NewLabel("Sisa Durasi: menghitung...")
-    -- Update countdown tiap detik
+    local InfoTab = Window:AddTab("Info")
+    
+    local InfoLeftSection = InfoTab:AddLeftGroupbox("Informasi Lisensi")
+    
+    InfoLeftSection:AddLabel("Developer: Putzzdev")
+    InfoLeftSection:AddLabel("WhatsApp: 088976255131")
+    InfoLeftSection:AddLabel("Executor: " .. userExecutor)
+    InfoLeftSection:AddLabel("Jenis Paket: " .. keyJenis)
+    
+    local timeLabel = InfoLeftSection:AddLabel("Sisa Durasi: Menghitung...")
+    
+    InfoLeftSection:AddButton("Cek Sisa Waktu Key", function()
+        if keyValidGlobal and keyExpiryTime > 0 then
+            local _,_,_,_,ts = getTimeRemaining(keyExpiryTime)
+            Library:Notification("Sisa Durasi", ts, 5)
+        else
+            Library:Notification("Info", "Key belum terverifikasi", 3)
+        end
+    end)
+    
+    InfoLeftSection:AddButton("Copy WA Developer", function()
+        pcall(function() setclipboard("088976255131") end)
+        Library:Notification("Copied!", "Nomor WA berhasil disalin", 2)
+    end)
+    
+    -- Info Right Section
+    local InfoRightSection = InfoTab:AddRightGroupbox("Status")
+    
+    InfoRightSection:AddLabel("✅ Key Active: " .. tostring(keyValidGlobal))
+    if keyJenis and keyJenis ~= "" then
+        InfoRightSection:AddLabel("📦 Paket: " .. keyJenis)
+    end
+    
+    -- Countdown updater
     task.spawn(function()
         while true do
             task.wait(1)
-            if keyValidGlobal and keyExpiryTime>0 then
-                local _,_,_,_,ts=getTimeRemaining(keyExpiryTime)
-                -- Kavo tidak support update label dinamis, tampilkan di notif setiap menit
+            if keyValidGlobal and keyExpiryTime > 0 then
+                local _,_,_,_,ts = getTimeRemaining(keyExpiryTime)
+                pcall(function() timeLabel:SetText("Sisa Durasi: " .. ts) end)
             end
         end
     end)
-
-    InfoSection:NewButton("🕐 Cek Sisa Waktu Key", "Tampilkan sisa durasi key", function()
-        if keyValidGlobal and keyExpiryTime>0 then
-            local _,_,_,_,ts=getTimeRemaining(keyExpiryTime)
-            Library.CreateNotification("Sisa Durasi", ts, 5)
-        else
-            Library.CreateNotification("Info", "Key belum terverifikasi", 3)
-        end
-    end)
-
-    InfoSection:NewButton("📋 Copy WA Developer", "Salin nomor WA ke clipboard", function()
-        pcall(function() setclipboard("088976255131") end)
-        Library.CreateNotification("Copied!", "Nomor WA berhasil disalin", 2)
-    end)
-
+    
+    -- Reconnect handlers
     LocalPlayer.CharacterAdded:Connect(function()
         task.wait(1)
         if noclipEnabled then startNoclip() end
         if flyEnabled then startFlyMode() end
+        if freezeSelfEnabled then
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = true end
+        end
+        if speedEnabled then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = fastSpeed end
+        end
     end)
 end
