@@ -1,7 +1,11 @@
--- ================== DRIP CLIENT V8.2 PREMIUM (RAYFIELD MASTER EDITION) ==================
--- FULL RAYFIELD THEME: Tampilan Key System + Menu Utama Full Menggunakan Desain Mewah Rayfield
--- Perbaikan: Tombol Get Key & Verifikasi Input Key Berfungsi 100% Menggunakan Fungsi Native Rayfield
+-- ================== DRIP CLIENT V8.2 RAYFIELD UI ==================
+-- UI menggunakan Rayfield Interface Suite by Sirius
+-- Key system dengan Firebase database
 
+-- ================== LOAD RAYFIELD ==================
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
+
+-- ================== LOAD SERVICES ==================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -15,7 +19,7 @@ local function detectExecutor()
     local executorName = "Unknown Executor"
     local executors = {
         {name = "Delta", check = function() return syn and syn.request and syn.crypt end},
-        {name = "Arceus X", check = function() return game:GetService("CoreGui"):FindFirstChild("Arceus X V2") or (identifyexecutor and identifyexecutor() == "Arceus X") end},
+        {name = "Arceus X", check = function() return game:GetService("CoreGui"):FindFirstChild("Arceus X V2") end},
         {name = "CodeX", check = function() return CodeX and CodeX.Execute end},
         {name = "Hydrogen", check = function() return isfile and readfile and writefile and (not syn) end},
         {name = "Fluxus", check = function() return fluxus and fluxus.ismobile end},
@@ -23,9 +27,6 @@ local function detectExecutor()
         {name = "ScriptWare", check = function() return scriptware and scriptware.loader end},
         {name = "Synapse X", check = function() return syn and syn.crypt and syn.request end},
         {name = "Evon", check = function() return evon and evon.execute end},
-        {name = "Vega X", check = function() return game:GetService("CoreGui"):FindFirstChild("Vega Hub") end},
-        {name = "Swift", check = function() return Swift and Swift.Execute end},
-        {name = "Nexus", check = function() return Nexus and Nexus.Load end}
     }
     for _, exec in ipairs(executors) do
         local success, result = pcall(exec.check)
@@ -38,7 +39,7 @@ end
 
 local userExecutor = detectExecutor()
 
--- ================== GLOBAL STATE & DATABASE SYSTEM ==================
+-- ================== GLOBAL STATE & FILE SAVING SYSTEM ==================
 local FIREBASE_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEBSITE_URL = "https://drip-client-get-key.vercel.app/"
 local SAVE_FILE = "drip_key_data.txt"
@@ -46,7 +47,7 @@ local SAVE_FILE = "drip_key_data.txt"
 local activeKeys = {}
 local currentUserKey = nil
 local keyExpiryTime = 0
-local keyJenis = "BELUM VERIFIKASI"
+local keyJenis = ""
 local keyValidGlobal = false
 
 local function loadKeyData()
@@ -133,16 +134,15 @@ local function checkKeyExpiry(inputKey)
     currentUserKey = inputKey
     keyValidGlobal = true
     
-    return true, "VALID"
+    local _, _, _, _, timeStr = getTimeRemaining(expiryTime)
+    return true, "VALID! Sisa: " .. timeStr
 end
 
 -- ================== VARIABEL FITUR CHEAT ==================
 local espEnabled = false
 local lineEnabled = false
-local lineColor = Color3.fromRGB(156, 39, 176)
+local lineColor = Color3.fromRGB(0, 0, 0)
 local skeletonEnabled = false
-local boxColor = Color3.fromRGB(255, 255, 255)
-local skeletonColor = Color3.fromRGB(0, 255, 120)
 local ESPTable = {}
 local SkeletonESP = {}
 
@@ -184,7 +184,7 @@ local invisibleHumanoid = nil
 
 local MAX_ESP_DISTANCE = 200000
 
--- ================== ENGINE ACTIONS (CHEATS) ==================
+-- ================== ENGINE ACTIONS ==================
 local function startFlyMode()
     local plr = LocalPlayer
     if not plr.Character then return end
@@ -290,40 +290,96 @@ local function toggleInvisible(state)
     else
         if LocalPlayer.Character then
             for _, data in pairs(invisibleParts) do
-                pcall(function() if data.part and data.part.Parent then data.part.Transparency = data.origTrans end end)
+                pcall(function()
+                    if data.part and data.part.Parent then
+                        data.part.Transparency = data.origTrans
+                    end
+                end)
             end
             for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
-                if v:IsA("BasePart") and v.Transparency == 0.5 then v.Transparency = 0 end
+                if v:IsA("BasePart") and v.Transparency == 0.5 then
+                    v.Transparency = 0
+                end
             end
         end
-        invisibleParts = {} invisibleRootPart = nil invisibleHumanoid = nil
+        invisibleParts = {}
+        invisibleRootPart = nil
+        invisibleHumanoid = nil
     end
 end
 
+-- ================== GOD MODE PERMANEN ==================
 local function setupAntiDamage()
-    if antiDamageHeartbeat then pcall(function() antiDamageHeartbeat:Disconnect() end) antiDamageHeartbeat = nil end
-    local connections = {}
-    local function makeInvincible()
-        local char = LocalPlayer.Character if not char then return end
-        local hum = char:FindFirstChildOfClass("Humanoid") if not hum then return end
-        hum.Health = hum.MaxHealth hum.BreakJointsOnDeath = false
-        if hum._godHealthConn then hum._godHealthConn:Disconnect() hum._godHealthConn = nil end
-        local healthConn = hum.HealthChanged:Connect(function(newHealth)
-            if antiDamageEnabled and newHealth < hum.MaxHealth then hum.Health = hum.MaxHealth end
-        end)
-        hum._godHealthConn = healthConn table.insert(connections, healthConn)
+    if antiDamageHeartbeat then
+        if type(antiDamageHeartbeat) == "table" and antiDamageHeartbeat._disconnect then
+            antiDamageHeartbeat:_disconnect()
+        elseif antiDamageHeartbeat.Disconnect then
+            antiDamageHeartbeat:Disconnect()
+        end
+        antiDamageHeartbeat = nil
     end
+    
+    local connections = {}
+    
+    local function makeInvincible()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        
+        hum.Health = hum.MaxHealth
+        hum.BreakJointsOnDeath = false
+        
+        if hum._godHealthConn then
+            hum._godHealthConn:Disconnect()
+            hum._godHealthConn = nil
+        end
+        
+        local healthConn = hum.HealthChanged:Connect(function(newHealth)
+            if antiDamageEnabled and newHealth < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
+        end)
+        hum._godHealthConn = healthConn
+        table.insert(connections, healthConn)
+    end
+    
     local hbConn = RunService.Heartbeat:Connect(function()
         if antiDamageEnabled and LocalPlayer.Character then
             local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+            if hum and hum.Health < hum.MaxHealth then
+                hum.Health = hum.MaxHealth
+            end
         end
     end)
-    table.insert(connections, hbConn) makeInvincible()
-    local charConn = LocalPlayer.CharacterAdded:Connect(function() task.wait(0.2) if antiDamageEnabled then makeInvincible() end end)
+    table.insert(connections, hbConn)
+    
+    makeInvincible()
+    
+    local charConn = LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        if antiDamageEnabled then
+            makeInvincible()
+        end
+    end)
     table.insert(connections, charConn)
+    
     local godModeObject = {}
-    function godModeObject:Disconnect() for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end connections = {} end
+    function godModeObject:Disconnect()
+        for _, conn in ipairs(connections) do
+            pcall(function() conn:Disconnect() end)
+        end
+        connections = {}
+        if LocalPlayer.Character then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum._godHealthConn then
+                hum._godHealthConn:Disconnect()
+                hum._godHealthConn = nil
+            end
+        end
+    end
+    function godModeObject:_disconnect() self:Disconnect() end
+    
     antiDamageHeartbeat = godModeObject
 end
 
@@ -337,14 +393,24 @@ end)
 RunService.Heartbeat:Connect(function()
     if LocalPlayer.Character then
         local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum and jumpPowerEnabled then hum.UseJumpPower = true hum.JumpPower = jumpPowerValue end
+        if hum and jumpPowerEnabled then
+            hum.UseJumpPower = true
+            hum.JumpPower = jumpPowerValue
+        end
     end
 end)
 
--- ================== ESP SYSTEM RENDERING ==================
+-- ================== ESP SYSTEM DRAWINGS ==================
 local function createPlayerCounter()
     if enemyCountText then pcall(function() enemyCountText:Remove() end) end
-    enemyCountText = Drawing.new("Text") enemyCountText.Size = 22 enemyCountText.Color = Color3.fromRGB(255,0,0) enemyCountText.Center = true enemyCountText.Outline = true enemyCountText.Position = Vector2.new(Camera.ViewportSize.X / 2, 55) enemyCountText.Visible = false enemyCountText.Text = "PLAYERS: 0"
+    enemyCountText = Drawing.new("Text")
+    enemyCountText.Size = 22
+    enemyCountText.Color = Color3.fromRGB(255, 0, 0)
+    enemyCountText.Center = true
+    enemyCountText.Outline = true
+    enemyCountText.Position = Vector2.new(Camera.ViewportSize.X / 2, 55)
+    enemyCountText.Visible = false
+    enemyCountText.Text = "PLAYERS: 0"
 end
 
 local function createESP(player)
@@ -369,7 +435,7 @@ local function createSkeleton(player)
         {"LowerTorso", "RightUpperLeg"}, {"RightUpperLeg", "RightLowerLeg"}
     }
     for i=1, #joints do
-        local l = Drawing.new("Line") l.Thickness = 2 l.Color = skeletonColor l.Visible = false
+        local l = Drawing.new("Line") l.Thickness = 2 l.Color = Color3.fromRGB(0, 255, 0) l.Visible = false
         table.insert(lines, {l, joints[i][1], joints[i][2]})
     end
     SkeletonESP[player] = lines
@@ -398,14 +464,30 @@ RunService.RenderStepped:Connect(function()
                 local width = height / 2
 
                 if espEnabled then
-                    box.Size = Vector2.new(width, height) box.Position = Vector2.new(pos.X - width/2, top.Y) box.Color = boxColor box.Visible = true
-                    name.Position = Vector2.new(pos.X, top.Y - 15) name.Text = player.DisplayName or player.Name name.Visible = true
-                    distText.Text = math.floor(distance).."m" distText.Position = Vector2.new(pos.X, bottom.Y + 3) distText.Visible = true
+                    box.Size = Vector2.new(width, height)
+                    box.Position = Vector2.new(pos.X - width/2, top.Y)
+                    box.Color = Color3.fromRGB(0, 0, 0)
+                    box.Visible = true
+
+                    name.Position = Vector2.new(pos.X, top.Y - 15)
+                    name.Text = player.DisplayName or player.Name
+                    name.Visible = true
+
+                    distText.Text = math.floor(distance).."m"
+                    distText.Position = Vector2.new(pos.X, bottom.Y + 3)
+                    distText.Visible = true
 
                     if hum then
                         local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                        hBg.Size = Vector2.new(4, height) hBg.Position = Vector2.new(pos.X + width/2 + 3, top.Y) hBg.Color = Color3.fromRGB(40,40,40) hBg.Visible = true
-                        hFg.Size = Vector2.new(4, height * pct) hFg.Position = Vector2.new(pos.X + width/2 + 3, bottom.Y - (height * pct)) hFg.Color = Color3.fromRGB(255 * (1-pct), 255 * pct, 0) hFg.Visible = true
+                        hBg.Size = Vector2.new(4, height)
+                        hBg.Position = Vector2.new(pos.X + width/2 + 3, top.Y)
+                        hBg.Color = Color3.fromRGB(40,40,40)
+                        hBg.Visible = true
+
+                        hFg.Size = Vector2.new(4, height * pct)
+                        hFg.Position = Vector2.new(pos.X + width/2 + 3, bottom.Y - (height * pct))
+                        hFg.Color = Color3.fromRGB(255 * (1-pct), 255 * pct, 0)
+                        hFg.Visible = true
                     end
                 else
                     box.Visible = false name.Visible = false distText.Visible = false hBg.Visible = false hFg.Visible = false
@@ -415,8 +497,13 @@ RunService.RenderStepped:Connect(function()
             end
 
             if lineEnabled and visible then
-                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y) line.To = Vector2.new(pos.X, pos.Y) line.Color = lineColor line.Visible = true
-            else line.Visible = false end
+                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                line.To = Vector2.new(pos.X, pos.Y)
+                line.Color = Color3.fromRGB(0, 0, 0)
+                line.Visible = true
+            else
+                line.Visible = false
+            end
         end
     end
 
@@ -429,290 +516,487 @@ RunService.RenderStepped:Connect(function()
                     if p1 and p2 then
                         local pos1, vis1 = Camera:WorldToViewportPoint(p1.Position)
                         local pos2, vis2 = Camera:WorldToViewportPoint(p2.Position)
-                        if vis1 and vis2 then l.From = Vector2.new(pos1.X, pos1.Y) l.To = Vector2.new(pos2.X, pos2.Y) l.Visible = true else l.Visible = false end
+                        if vis1 and vis2 then
+                            l.From = Vector2.new(pos1.X, pos1.Y)
+                            l.To = Vector2.new(pos2.X, pos2.Y)
+                            l.Visible = true
+                        else l.Visible = false end
                     else l.Visible = false end
                 end
-            else for _, ld in pairs(lines) do ld[1].Visible = false end end
+            else
+                for _, ld in pairs(lines) do ld[1].Visible = false end
+            end
         end
     else
         for _, lines in pairs(SkeletonESP) do for _, ld in pairs(lines) do ld[1].Visible = false end end
     end
 
-    if playerCounterEnabled and enemyCountText then enemyCountText.Text = "PLAYERS: " .. screenCount enemyCountText.Visible = true
-    elseif enemyCountText then enemyCountText.Visible = false end
+    if playerCounterEnabled and enemyCountText then
+        enemyCountText.Text = "PLAYERS: " .. screenCount
+        enemyCountText.Visible = true
+    elseif enemyCountText then
+        enemyCountText.Visible = false
+    end
 end)
 
--- ================== TOGGLE MOBILE FLOATING BUTTON ==================
-local function createMobileToggle()
-    if game.CoreGui:FindFirstChild("RayfieldMobileToggle") then 
-        game.CoreGui.RayfieldMobileToggle:Destroy() 
-    end
+-- ================== FREEZE FUNCTION ==================
+local freezeAllEnabled = false
+local freezeSelfEnabled = false
 
-    local toggleGui = Instance.new("ScreenGui", game.CoreGui)
-    toggleGui.Name = "RayfieldMobileToggle"
-    
-    local mBtn = Instance.new("TextButton", toggleGui)
-    mBtn.Size = UDim2.new(0, 50, 0, 50)
-    mBtn.Position = UDim2.new(0, 15, 0.5, -25)
-    mBtn.BackgroundColor3 = Color3.fromRGB(156, 39, 176) 
-    mBtn.BackgroundTransparency = 0.3
-    mBtn.Text = "DRIP"
-    mBtn.TextColor3 = Color3.new(1, 1, 1)
-    mBtn.Font = Enum.Font.GothamBold
-    mBtn.TextSize = 11
-    mBtn.Active = true
-    mBtn.Draggable = true 
-    
-    Instance.new("UICorner", mBtn).CornerRadius = UDim.new(1, 0)
-    local btnStroke = Instance.new("UIStroke", mBtn)
-    btnStroke.Color = Color3.new(1, 1, 1)
-    btnStroke.Thickness = 1.5
-
-    mBtn.MouseButton1Click:Connect(function()
-        local rayfieldGui = game.CoreGui:FindFirstChild("Rayfield")
-        if rayfieldGui then
-            local main = rayfieldGui:FindFirstChild("Main")
-            if main then main.Visible = not main.Visible end
+local function freezeAllPlayers(state)
+    freezeAllEnabled = state
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            for _, part in pairs(p.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function() part.Anchored = state end)
+                end
+            end
         end
-    end)
+    end
 end
 
--- ================== LAUNCH MAIN SCRIPT ENGINE ==================
+local function applyFreezeSelf(state)
+    freezeSelfEnabled = state
+    local myChar = LocalPlayer.Character
+    if myChar then
+        local hrp = myChar:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.Anchored = state
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if freezeSelfEnabled then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Anchored = true end
+    end
+end)
+
+-- ================== TELEPORT FUNCTION ==================
+local function teleportToPlayer(targetPlayer)
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        LocalPlayer.Character.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+        Rayfield:Notify({
+            Title = "Teleport",
+            Content = "Teleported to " .. targetPlayer.Name,
+            Duration = 2,
+        })
+    end
+end
+
+-- ================== MAIN CHEAT INTERFACE DENGAN RAYFIELD ==================
 local function loadMainScript()
+    -- Hapus key system GUI jika ada
+    if game.CoreGui:FindFirstChild("DripKeySystem") then
+        game.CoreGui.DripKeySystem:Destroy()
+    end
+    
     createPlayerCounter()
-    createMobileToggle()
     
-    local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+    -- Buat window utama
     local Window = Rayfield:CreateWindow({
-        Name = "DRIP CLIENT V8.2 PREMIUM",
-        LoadingTitle = "Launching Drip Engine...",
+        Name = "DRIP CLIENT PREMIUM",
+        Icon = 0,
+        LoadingTitle = "DRIP CLIENT",
         LoadingSubtitle = "by Putzzdev",
-        ConfigurationSaving = { Enabled = false },
-        KeySystem = false -- Dimatikan disini karena sudah sukses divalidasi di Window pertama!
+        Theme = "Default",
+        ConfigurationSaving = {
+            Enabled = true,
+            FolderName = "DripClient",
+            FileName = "DripConfig"
+        },
+        KeySystem = false,
     })
     
-    -- TAB 1: MAIN CHEATS
-    local TabMain = Window:CreateTab("Main Cheats", 4483362458)
+    -- TAB MAIN
+    local MainTab = Window:CreateTab("Main", 0)
     
-    TabMain:CreateToggle({
-        Name = "Fly Mode (Terbang)",
+    MainTab:CreateSection("Movement")
+    
+    MainTab:CreateToggle({
+        Name = "Fly Mode",
         CurrentValue = false,
-        Callback = function(Value) flyEnabled = Value if Value then startFlyMode() else stopFlyMode() end end,
+        Flag = "FlyMode",
+        Callback = function(Value)
+            flyEnabled = Value
+            if Value then startFlyMode() else stopFlyMode() end
+        end,
     })
     
-    TabMain:CreateSlider({
-        Name = "Fly Speed",
-        Range = {20, 300},
-        Increment = 5,
-        Suffix = "Speed",
-        CurrentValue = 100,
-        Callback = function(Value) flySpeed = Value end,
-    })
-    
-    TabMain:CreateToggle({
+    MainTab:CreateToggle({
         Name = "Speed Boost",
         CurrentValue = false,
+        Flag = "SpeedBoost",
         Callback = function(Value)
             speedEnabled = Value
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.WalkSpeed = Value and fastSpeed or normalSpeed end
         end,
     })
-
-    TabMain:CreateSlider({
-        Name = "WalkSpeed Value",
-        Range = {16, 250},
-        Increment = 2,
-        Suffix = "Speed",
-        CurrentValue = 60,
+    
+    MainTab:CreateSlider({
+        Name = "Speed Value",
+        Range = {16, 120},
+        Increment = 1,
+        Suffix = "WalkSpeed",
+        CurrentValue = fastSpeed,
+        Flag = "SpeedValue",
         Callback = function(Value)
             fastSpeed = Value
-            if speedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = Value
+            if speedEnabled then
+                local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.WalkSpeed = Value end
             end
         end,
     })
     
-    TabMain:CreateToggle({
-        Name = "NoClip (Tembus Objek)",
+    MainTab:CreateToggle({
+        Name = "NoClip",
         CurrentValue = false,
-        Callback = function(Value) noclipEnabled = Value if Value then startNoclip() else stopNoclip() end end,
+        Flag = "NoClip",
+        Callback = function(Value)
+            noclipEnabled = Value
+            if Value then startNoclip() else stopNoclip() end
+        end,
     })
     
-    TabMain:CreateToggle({
+    MainTab:CreateToggle({
         Name = "Infinity Jump",
         CurrentValue = false,
-        Callback = function(Value) infinityJumpEnabled = Value end,
+        Flag = "InfinityJump",
+        Callback = function(Value)
+            infinityJumpEnabled = Value
+        end,
     })
     
-    TabMain:CreateToggle({
-        Name = "God Mode (Anti Damage)",
+    MainTab:CreateToggle({
+        Name = "Jump Power",
         CurrentValue = false,
-        Callback = function(Value) antiDamageEnabled = Value if Value then setupAntiDamage() else if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect() end antiDamageHeartbeat = nil end end,
+        Flag = "JumpPower",
+        Callback = function(Value)
+            jumpPowerEnabled = Value
+        end,
     })
     
-    TabMain:CreateToggle({
-        Name = "Spin Bot",
+    MainTab:CreateSlider({
+        Name = "Jump Power Value",
+        Range = {0, 200},
+        Increment = 5,
+        Suffix = "Power",
+        CurrentValue = jumpPowerValue,
+        Flag = "JumpPowerValue",
+        Callback = function(Value)
+            jumpPowerValue = Value
+        end,
+    })
+    
+    MainTab:CreateSection("Combat")
+    
+    MainTab:CreateToggle({
+        Name = "God Mode",
         CurrentValue = false,
-        Callback = function(Value) toggleSpin(Value) end,
-    })
-    
-    TabMain:CreateToggle({
-        Name = "Invisible Mode",
-        CurrentValue = false,
-        Callback = function(Value) toggleInvisible(Value) end,
-    })
-    
-    -- TAB 2: ESP SYSTEM
-    local TabESP = Window:CreateTab("ESP System", 4483362458)
-    TabESP:CreateToggle({ Name = "ESP Box", CurrentValue = false, Callback = function(v) espEnabled = v end })
-    TabESP:CreateToggle({ Name = "ESP Line", CurrentValue = false, Callback = function(v) lineEnabled = v end })
-    TabESP:CreateToggle({ Name = "ESP Skeleton", CurrentValue = false, Callback = function(v) skeletonEnabled = v end })
-    TabESP:CreateToggle({ Name = "Player Counter", CurrentValue = false, Callback = function(v) playerCounterEnabled = v end })
-    
-    -- TAB 3: UTILITY
-    local TabUtil = Window:CreateTab("Utility", 4483362458)
-    
-    local playersList = {}
-    local function updatePlayerList()
-        playersList = {}
-        for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(playersList, p.Name) end end
-    end
-    updatePlayerList()
-    
-    local TeleportDropdown = TabUtil:CreateDropdown({
-        Name = "Teleport Ke Player",
-        Options = playersList,
-        CurrentOption = "",
-        MultipleOptions = false,
-        Callback = function(Options)
-            local targetName = type(Options) == "table" and Options[1] or Options
-            local targetPlr = Players:FindFirstChild(targetName)
-            if targetPlr and targetPlr.Character and targetPlr.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = targetPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+        Flag = "GodMode",
+        Callback = function(Value)
+            antiDamageEnabled = Value
+            if Value then
+                setupAntiDamage()
+            else
+                if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect() end
+                antiDamageHeartbeat = nil
             end
         end,
     })
     
-    Players.PlayerAdded:Connect(function() task.wait(1) updatePlayerList() TeleportDropdown:Refresh(playersList, "") end)
-    Players.PlayerRemoving:Connect(function() task.wait(1) updatePlayerList() TeleportDropdown:Refresh(playersList, "") end)
-    
-    TabUtil:CreateToggle({
-        Name = "Freeze All Player (Visual Only)",
+    MainTab:CreateToggle({
+        Name = "Spin Muter",
         CurrentValue = false,
+        Flag = "SpinMode",
         Callback = function(Value)
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character then
-                    for _, part in pairs(p.Character:GetDescendants()) do if part:IsA("BasePart") then pcall(function() part.Anchored = Value end) end end
+            toggleSpin(Value)
+        end,
+    })
+    
+    MainTab:CreateSlider({
+        Name = "Spin Speed",
+        Range = {10, 200},
+        Increment = 5,
+        Suffix = "deg/s",
+        CurrentValue = spinSpeed,
+        Flag = "SpinSpeed",
+        Callback = function(Value)
+            spinSpeed = Value
+        end,
+    })
+    
+    MainTab:CreateToggle({
+        Name = "Invisible Mode",
+        CurrentValue = false,
+        Flag = "InvisibleMode",
+        Callback = function(Value)
+            toggleInvisible(Value)
+        end,
+    })
+    
+    -- TAB ESP
+    local ESPTab = Window:CreateTab("ESP", 1)
+    
+    ESPTab:CreateSection("Visuals")
+    
+    ESPTab:CreateToggle({
+        Name = "ESP Box (Hitam)",
+        CurrentValue = false,
+        Flag = "ESPBox",
+        Callback = function(Value)
+            espEnabled = Value
+        end,
+    })
+    
+    ESPTab:CreateToggle({
+        Name = "ESP Line",
+        CurrentValue = false,
+        Flag = "ESPLine",
+        Callback = function(Value)
+            lineEnabled = Value
+        end,
+    })
+    
+    ESPTab:CreateToggle({
+        Name = "ESP Skeleton",
+        CurrentValue = false,
+        Flag = "ESPSkeleton",
+        Callback = function(Value)
+            skeletonEnabled = Value
+        end,
+    })
+    
+    ESPTab:CreateToggle({
+        Name = "Player Counter",
+        CurrentValue = false,
+        Flag = "PlayerCounter",
+        Callback = function(Value)
+            playerCounterEnabled = Value
+        end,
+    })
+    
+    -- TAB UTILITY
+    local UtilityTab = Window:CreateTab("Utility", 2)
+    
+    UtilityTab:CreateSection("Teleport")
+    
+    -- Dropdown untuk teleport ke player
+    local teleportDropdown = UtilityTab:CreateDropdown({
+        Name = "Teleport ke Player",
+        Options = {},
+        CurrentOption = "",
+        Flag = "TeleportPlayer",
+        Callback = function(Option)
+            for _, plr in pairs(Players:GetPlayers()) do
+                if (plr.DisplayName or plr.Name) == Option then
+                    teleportToPlayer(plr)
+                    break
                 end
             end
         end,
     })
     
-    -- TAB 4: LISENSI INFO
-    local TabInfo = Window:CreateTab("Info Lisensi", 4483362458)
-    TabInfo:CreateLabel("Executor Anda: " .. userExecutor)
-    TabInfo:CreateLabel("Jenis Paket Key: " .. keyJenis)
-    local CountdownLabel = TabInfo:CreateLabel("Sisa Durasi: Menghitung...")
+    -- Update dropdown options setiap kali player list berubah
+    local function updateTeleportDropdown()
+        local options = {}
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                table.insert(options, plr.DisplayName or plr.Name)
+            end
+        end
+        teleportDropdown:SetOptions(options)
+    end
     
+    updateTeleportDropdown()
+    Players.PlayerAdded:Connect(updateTeleportDropdown)
+    Players.PlayerRemoving:Connect(updateTeleportDropdown)
+    
+    UtilityTab:CreateSection("Freeze")
+    
+    UtilityTab:CreateToggle({
+        Name = "Freeze All Player (Visual)",
+        CurrentValue = false,
+        Flag = "FreezeAll",
+        Callback = function(Value)
+            freezeAllPlayers(Value)
+            Rayfield:Notify({
+                Title = "Freeze",
+                Content = Value and "Semua player dibekukan!" or "Freeze dinonaktifkan",
+                Duration = 2,
+            })
+        end,
+    })
+    
+    UtilityTab:CreateToggle({
+        Name = "Freeze Diri Sendiri",
+        CurrentValue = false,
+        Flag = "FreezeSelf",
+        Callback = function(Value)
+            applyFreezeSelf(Value)
+        end,
+    })
+    
+    -- TAB INFO
+    local InfoTab = Window:CreateTab("Info", 3)
+    
+    InfoTab:CreateSection("Lisensi")
+    
+    InfoTab:CreateParagraph({
+        Title = "Executor",
+        Content = userExecutor,
+    })
+    
+    InfoTab:CreateParagraph({
+        Title = "Jenis Paket",
+        Content = keyJenis,
+    })
+    
+    -- Label untuk countdown key
+    local keyCountdownLabel = InfoTab:CreateParagraph({
+        Title = "Sisa Durasi",
+        Content = "Memuat...",
+    })
+    
+    InfoTab:CreateParagraph({
+        Title = "Developer",
+        Content = "Putzzdev\nWhatsApp: 088976255131",
+    })
+    
+    -- Update countdown setiap detik
     task.spawn(function()
         while true do
             task.wait(1)
             if keyValidGlobal and keyExpiryTime > 0 then
                 local _, _, _, _, timeStr = getTimeRemaining(keyExpiryTime)
-                CountdownLabel:Set(os.time() > keyExpiryTime and "Status Key: EXPIRED!" or "Sisa Durasi: " .. timeStr)
+                if os.time() > keyExpiryTime then
+                    keyCountdownLabel:Set("Sisa Durasi", "EXPIRED! (Harap ganti key)")
+                else
+                    keyCountdownLabel:Set("Sisa Durasi", timeStr)
+                end
             end
         end
     end)
     
-    TabInfo:CreateLabel("Developer: Putzzdev")
-    TabInfo:CreateLabel("WhatsApp: 088976255131")
-end
-
--- ================== INITIALIZE WITH NATIVE RAYFIELD KEY SYSTEM ==================
--- Perbaikan: Menggunakan struktur Callback bawaan Rayfield resmi untuk validasi Firebase secara akurat
-
-local RayfieldLoader = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
-local WindowWithKey = RayfieldLoader:CreateWindow({
-    Name = "DRIP CLIENT VERIFIKASI",
-    LoadingTitle = "Memuat Sistem Keamanan...",
-    LoadingSubtitle = "by Putzzdev",
-    ConfigurationSaving = { Enabled = false },
-    KeySystem = true, -- AKTIFKAN SISTEM KEY RAYFIELD
-    KeySettings = {
-        Title = "Sistem Lisensi Premium",
-        Subtitle = "Hubungkan token server database anda",
-        Note = "Salin link website untuk mengambil key secara gratis melalui linkvertise.",
-        FileName = "drip_key_data", 
-        SaveKey = true, -- Otomatis menyimpan key yang valid agar user tidak perlu mengetik ulang
-        GrabKeyFromUrl = "", 
-        Actions = {
-            [1] = {
-                Text = "Get Key (Ambil Link)",
-                Callback = function()
-                    if setclipboard then
-                        setclipboard(WEBSITE_URL)
-                        -- Memanfaatkan notifikasi internal Rayfield yang mewah
-                        RayfieldLoader:Notify({Title = "BERHASIL", Content = "Link web key telah disalin ke clipboard!", Duration = 4})
-                    else
-                        print("Link Key Anda: " .. WEBSITE_URL)
-                    end
-                end
-            }
-        },
-        -- Fungsi inti: Membaca teks yang diketik user di kotak Rayfield dan dicocokkan ke database Firebase secara real-time
-        Key = { "AksesBypassDihandleFungsiManual" },
-        Callback = function(InputKey)
-            if InputKey == "" or not InputKey then return false end
-            
-            -- Panggil fungsi cek Firebase asli buatan kamu
-            local isValid, message = checkKeyExpiry(InputKey)
-            if isValid then
-                RayfieldLoader:Notify({Title = "AKSES DISETUJUI", Content = "Key valid! Meluncurkan menu cheat utama...", Duration = 3})
-                task.wait(1)
-                return true -- Mengizinkan Rayfield menutup Key GUI dan lanjut
-            else
-                RayfieldLoader:Notify({Title = "AKSES DITOLAK", Content = message, Duration = 4})
-                return false -- Menolak penutupan GUI karena key salah/expired
-            end
+    -- Update ESP untuk player baru/keluar
+    for _, p in pairs(Players:GetPlayers()) do 
+        createESP(p) 
+        createSkeleton(p) 
+    end
+    
+    Players.PlayerAdded:Connect(function(p) 
+        createESP(p) 
+        createSkeleton(p) 
+    end)
+    
+    Players.PlayerRemoving:Connect(function(p)
+        if ESPTable[p] then 
+            for _, d in pairs(ESPTable[p]) do 
+                pcall(function() d:Remove() end) 
+            end 
+            ESPTable[p] = nil 
         end
-    }
-})
-
--- Jika Key sudah pernah disimpan sebelumnya dan masih valid secara global, langsung eksekusi script utama
-if keyValidGlobal or not WindowWithKey then
-    pcall(loadMainScript)
-else
-    -- Loop pengecekan dinamis untuk mendeteksi kapan Window Key Rayfield dihancurkan setelah sukses verifikasi
-    task.spawn(function()
-        local rayfieldGui = game.CoreGui:FindFirstChild("Rayfield")
-        if rayfieldGui then
-            local keySystemGui = rayfieldGui:FindFirstChild("KeySystem")
-            if keySystemGui then
-                -- Tunggu hingga Key Gui bawaan Rayfield hilang (Tanda user berhasil memasukkan key yang benar)
-                while keySystemGui and keySystemGui.Parent do
-                    task.wait(0.5)
-                end
-                -- Jalankan menu cheat utama Drip Client
-                pcall(loadMainScript)
-            end
+        if SkeletonESP[p] then 
+            for _, ld in pairs(SkeletonESP[p]) do 
+                pcall(function() ld[1]:Remove() end) 
+            end 
+            SkeletonESP[p] = nil 
         end
+        updateTeleportDropdown()
     end)
 end
 
--- Sinkronisasi Player Connectors untuk ESP System
-for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
-Players.PlayerAdded:Connect(function(p) createESP(p) createSkeleton(p) end)
-Players.PlayerRemoving:Connect(function(p)
-    if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
-    if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
-end)
+-- ================== KEY SYSTEM UI DENGAN RAYFIELD ==================
+local function showKeySystem()
+    local KeyWindow = Rayfield:CreateWindow({
+        Name = "DRIP CLIENT - VERIFIKASI KEY",
+        Icon = 0,
+        LoadingTitle = "DRIP CLIENT",
+        LoadingSubtitle = "Verifikasi Lisensi",
+        Theme = "Default",
+        ConfigurationSaving = {
+            Enabled = false,
+        },
+        KeySystem = false,
+    })
+    
+    local KeyTab = KeyWindow:CreateTab("Verifikasi", 0)
+    
+    KeyTab:CreateParagraph({
+        Title = "Selamat Datang di DRIP CLIENT",
+        Content = "Silakan masukkan key premium Anda untuk mengakses fitur lengkap.",
+    })
+    
+    local keyInput = KeyTab:CreateInput({
+        Name = "Key Premium",
+        PlaceholderText = "Masukkan key di sini...",
+        RemoveTextAfterFocusLost = false,
+        Flag = "PremiumKey",
+        Callback = function(Text)
+        end,
+    })
+    
+    local statusParagraph = KeyTab:CreateParagraph({
+        Title = "Status",
+        Content = "Menunggu verifikasi...",
+    })
+    
+    KeyTab:CreateButton({
+        Name = "Ambil Key",
+        Callback = function()
+            if setclipboard then
+                setclipboard(WEBSITE_URL)
+                statusParagraph:Set("Status", "Link berhasil disalin ke clipboard!")
+                Rayfield:Notify({
+                    Title = "Berhasil",
+                    Content = "Link web key disalin!",
+                    Duration = 2,
+                })
+            else
+                statusParagraph:Set("Status", WEBSITE_URL)
+            end
+        end,
+    })
+    
+    KeyTab:CreateButton({
+        Name = "Verifikasi Key",
+        Callback = function()
+            local inputKey = keyInput:GetValue():gsub("%s+", "")
+            if inputKey == "" then 
+                statusParagraph:Set("Status", "Key tidak boleh kosong!")
+                return 
+            end
+            
+            statusParagraph:Set("Status", "Sedang verifikasi ke database server...")
+            
+            local isValid, message = checkKeyExpiry(inputKey)
+            
+            if isValid then
+                statusParagraph:Set("Status", "✓ Key Valid! Loading menu...")
+                Rayfield:Notify({
+                    Title = "Sukses",
+                    Content = "Key berhasil diverifikasi!",
+                    Duration = 2,
+                })
+                task.wait(1)
+                KeyWindow:Destroy()
+                loadMainScript()
+            else
+                statusParagraph:Set("Status", "✗ " .. message)
+                Rayfield:Notify({
+                    Title = "Gagal",
+                    Content = message,
+                    Duration = 3,
+                })
+            end
+        end,
+    })
+end
 
--- Loop pemicu respawn agar tombol toggle melayang tidak hilang dari layer CoreGui HP
-LocalPlayer.CharacterAdded:Connect(function() 
-    task.wait(1.5) 
-    if keyValidGlobal then createMobileToggle() end
-    if noclipEnabled then startNoclip() end 
-    if flyEnabled then startFlyMode() end 
-end)
+-- Start the key system
+showKeySystem()
