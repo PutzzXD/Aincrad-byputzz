@@ -1,6 +1,6 @@
 -- ================== DRIP CLIENT V8.2 PREMIUM (RAYFIELD MASTER EDITION) ==================
 -- FULL RAYFIELD THEME: Tampilan Key System + Menu Utama Full Menggunakan Desain Mewah Rayfield
--- Fitur Integrasi: Database Firebase, Hitung Mundur Server, Progress Loading, & Mobile Toggle
+-- Perbaikan: Tombol Get Key & Verifikasi Input Key Berfungsi 100% Menggunakan Fungsi Native Rayfield
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -341,7 +341,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ================== ESP CORE RENDERING ==================
+-- ================== ESP SYSTEM RENDERING ==================
 local function createPlayerCounter()
     if enemyCountText then pcall(function() enemyCountText:Remove() end) end
     enemyCountText = Drawing.new("Text") enemyCountText.Size = 22 enemyCountText.Color = Color3.fromRGB(255,0,0) enemyCountText.Center = true enemyCountText.Outline = true enemyCountText.Position = Vector2.new(Camera.ViewportSize.X / 2, 55) enemyCountText.Visible = false enemyCountText.Text = "PLAYERS: 0"
@@ -442,7 +442,7 @@ RunService.RenderStepped:Connect(function()
     elseif enemyCountText then enemyCountText.Visible = false end
 end)
 
--- ================== TOGGLE MOBILE FLOATING BUTTON (ANTI-LOST) ==================
+-- ================== TOGGLE MOBILE FLOATING BUTTON ==================
 local function createMobileToggle()
     if game.CoreGui:FindFirstChild("RayfieldMobileToggle") then 
         game.CoreGui.RayfieldMobileToggle:Destroy() 
@@ -453,7 +453,7 @@ local function createMobileToggle()
     
     local mBtn = Instance.new("TextButton", toggleGui)
     mBtn.Size = UDim2.new(0, 50, 0, 50)
-    mBtn.Position = UDim2.new(0, 15, 0, 15)
+    mBtn.Position = UDim2.new(0, 15, 0.5, -25)
     mBtn.BackgroundColor3 = Color3.fromRGB(156, 39, 176) 
     mBtn.BackgroundTransparency = 0.3
     mBtn.Text = "DRIP"
@@ -488,7 +488,7 @@ local function loadMainScript()
         LoadingTitle = "Launching Drip Engine...",
         LoadingSubtitle = "by Putzzdev",
         ConfigurationSaving = { Enabled = false },
-        KeySystem = false -- Dimatikan disini karena sudah sukses divalidasi di awal!
+        KeySystem = false -- Dimatikan disini karena sudah sukses divalidasi di Window pertama!
     })
     
     -- TAB 1: MAIN CHEATS
@@ -629,23 +629,23 @@ local function loadMainScript()
     TabInfo:CreateLabel("WhatsApp: 088976255131")
 end
 
--- ================== INITIALIZE WITH RAYFIELD CUSTOM KEY SYSTEM UI ==================
--- Disini script mengaktifkan mode Window Key System bawaan Rayfield untuk mencocokkan tampilan database Firebase kamu!
+-- ================== INITIALIZE WITH NATIVE RAYFIELD KEY SYSTEM ==================
+-- Perbaikan: Menggunakan struktur Callback bawaan Rayfield resmi untuk validasi Firebase secara akurat
 
 local RayfieldLoader = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
-local AuthWindow = RayfieldLoader:CreateWindow({
+local WindowWithKey = RayfieldLoader:CreateWindow({
     Name = "DRIP CLIENT VERIFIKASI",
     LoadingTitle = "Memuat Sistem Keamanan...",
     LoadingSubtitle = "by Putzzdev",
     ConfigurationSaving = { Enabled = false },
-    KeySystem = true, -- AKTIFKAN INTEGRASI TEMA KEY RAYFIELD
+    KeySystem = true, -- AKTIFKAN SISTEM KEY RAYFIELD
     KeySettings = {
         Title = "Sistem Lisensi Premium",
         Subtitle = "Hubungkan token server database anda",
-        Note = "Tekan tombol 'Get Key' di bawah untuk mendapatkan akses gratis via Linkvertise/Vercel.",
-        FileName = "drip_key_data", -- Menyimpan otomatis riwayat token agar anti-input ulang
-        SaveKey = true,
+        Note = "Salin link website untuk mengambil key secara gratis melalui linkvertise.",
+        FileName = "drip_key_data", 
+        SaveKey = true, -- Otomatis menyimpan key yang valid agar user tidak perlu mengetik ulang
         GrabKeyFromUrl = "", 
         Actions = {
             [1] = {
@@ -653,66 +653,53 @@ local AuthWindow = RayfieldLoader:CreateWindow({
                 Callback = function()
                     if setclipboard then
                         setclipboard(WEBSITE_URL)
-                        RayfieldLoader:Notify({Title = "BERHASIL", Content = "Link web key telah berhasil disalin ke clipboard!", Duration = 3})
+                        -- Memanfaatkan notifikasi internal Rayfield yang mewah
+                        RayfieldLoader:Notify({Title = "BERHASIL", Content = "Link web key telah disalin ke clipboard!", Duration = 4})
+                    else
+                        print("Link Key Anda: " .. WEBSITE_URL)
                     end
                 end
             }
         },
-        Key = { "AksesTerverifikasiOtomatisLewatFungsiFirebase" } -- Diumpankan dummy karena fungsi pengecekan real-time dihandle secara manual di bawah demi sinkronisasi Firebase Anda
+        -- Fungsi inti: Membaca teks yang diketik user di kotak Rayfield dan dicocokkan ke database Firebase secara real-time
+        Key = { "AksesBypassDihandleFungsiManual" },
+        Callback = function(InputKey)
+            if InputKey == "" or not InputKey then return false end
+            
+            -- Panggil fungsi cek Firebase asli buatan kamu
+            local isValid, message = checkKeyExpiry(InputKey)
+            if isValid then
+                RayfieldLoader:Notify({Title = "AKSES DISETUJUI", Content = "Key valid! Meluncurkan menu cheat utama...", Duration = 3})
+                task.wait(1)
+                return true -- Mengizinkan Rayfield menutup Key GUI dan lanjut
+            else
+                RayfieldLoader:Notify({Title = "AKSES DITOLAK", Content = message, Duration = 4})
+                return false -- Menolak penutupan GUI karena key salah/expired
+            end
+        end
     }
 })
 
--- Override fungsi pengecekan internal Rayfield agar tersambung sempurna ke Real-time Database Firebase Anda
-task.spawn(function()
-    local rayfieldGui = game.CoreGui:FindFirstChild("Rayfield")
-    if rayfieldGui then
-        local mainKeyFrame = rayfieldGui:FindFirstChild("KeySystem")
-        if mainKeyFrame then
-            local textBox = mainKeyFrame:FindFirstChildOfClass("TextBox") or mainKeyFrame:GetDescendants()[1] -- Mencari komponen input teks box bawaan Rayfield
-            local verifyButton = nil
-            
-            -- Cari tombol verifikasi bawaan Rayfield secara otomatis
-            for _, obj in pairs(mainKeyFrame:GetDescendants()) do
-                if obj:IsA("TextButton") and (obj.Text == "Submit" or obj.Text == "Check" or obj.Text == "Verify" or obj.Text == "→") then
-                    verifyButton = obj
-                    break
+-- Jika Key sudah pernah disimpan sebelumnya dan masih valid secara global, langsung eksekusi script utama
+if keyValidGlobal or not WindowWithKey then
+    pcall(loadMainScript)
+else
+    -- Loop pengecekan dinamis untuk mendeteksi kapan Window Key Rayfield dihancurkan setelah sukses verifikasi
+    task.spawn(function()
+        local rayfieldGui = game.CoreGui:FindFirstChild("Rayfield")
+        if rayfieldGui then
+            local keySystemGui = rayfieldGui:FindFirstChild("KeySystem")
+            if keySystemGui then
+                -- Tunggu hingga Key Gui bawaan Rayfield hilang (Tanda user berhasil memasukkan key yang benar)
+                while keySystemGui and keySystemGui.Parent do
+                    task.wait(0.5)
                 end
-            end
-            
-            -- Jika ditemukan, kita bajak (inject) fungsinya agar membaca database Firebase
-            if verifyButton then
-                verifyButton.MouseButton1Click:Connect(function()
-                    -- Ambil teks dari TextBox terenkripsi milik Rayfield
-                    local inputKey = ""
-                    for _, box in pairs(mainKeyFrame:GetDescendants()) do
-                        if box:IsA("TextBox") then inputKey = box.Text:gsub("%s+", "") break end
-                    end
-                    
-                    if inputKey == "" then
-                        RayfieldLoader:Notify({Title = "ERROR", Content = "Key input tidak boleh kosong!", Duration = 2})
-                        return
-                    end
-                    
-                    RayfieldLoader:Notify({Title = "VALIDASI SERVER", Content = "Mengecek keabsahan token di database...", Duration = 1.5})
-                    
-                    local isValid, message = checkKeyExpiry(inputKey)
-                    if isValid then
-                        RayfieldLoader:Notify({Title = "SUKSES", Content = "Key valid! Menyelaraskan enkripsi interface...", Duration = 2})
-                        task.wait(1)
-                        
-                        -- Hancurkan UI Loading Key System
-                        AuthWindow:Destroy()
-                        
-                        -- Eksekusi menu cheat utama bawaan Rayfield
-                        pcall(loadMainScript)
-                    else
-                        RayfieldLoader:Notify({Title = "AKSES DITOLAK", Content = message, Duration = 3})
-                    end
-                end)
+                -- Jalankan menu cheat utama Drip Client
+                pcall(loadMainScript)
             end
         end
-    end
-end)
+    end)
+end
 
 -- Sinkronisasi Player Connectors untuk ESP System
 for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
