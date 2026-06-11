@@ -1,8 +1,8 @@
--- ================== DRIP CLIENT V8.2 PREMIUM (FLUENT MOBILE EDITION) ==================
--- Perbaikan Ekstrem: Anti-Crash setelah verifikasi Key sukses di Executor Mobile / HP
--- Semua fitur dari file asli dipertahankan 100% tanpa ada yang dihapus.
-
-repeat task.wait() until game:IsLoaded()
+-- ================== DRIP CLIENT V8.2 PREMIUM (PERFECT KEY SYSTEM) ==================
+-- Perbaikan: Ukuran loading awal diperkecil & warna hitam sedeng elegan
+-- Perbaikan: Hitung mundur setelah key sukses diganti dengan Progress Bar animasi mulus
+-- Penambahan: Sistem key hitung mundur real-time server permanen (Anti-Reset walau keluar game)
+-- FITUR MOBILE FIX: Penambahan Tombol Melayang Khusus Mobile (Anti-Hilang di HP)
 
 -- ================== LOAD SERVICES AWAL ==================
 local Players = game:GetService("Players")
@@ -598,129 +598,235 @@ task.spawn(function()
     end
 end)
 
--- ================== LOAD MAIN CHEAT INTERFACE (FLUENT IMPLEMENTATION) ==================
+-- ================== LOAD MAIN CHEAT INTERFACE ==================
 local function loadMainScript()
     if game.CoreGui:FindFirstChild("DripKeySystem") then game.CoreGui.DripKeySystem:Destroy() end
     createPlayerCounter()
-
-    -- Load Fluent UI Engine External secara Aman
-    local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
     
-    local Window = Fluent:CreateWindow({
-        Title = "DRIP CLIENT PREMIUM",
-        SubTitle = "Status: Terautentikasi Aman Server",
-        TabWidth = 140,
-        Size = UDim2.fromOffset(450, 320), -- Ukuran ideal responsif layar HP
-        Acrylic = false,
-        Theme = "Dark",
-        MinimizeKey = Enum.KeyCode.LeftControl
-    })
+    local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
+    ScreenGui.Name = "DripClient"
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- Pembuatan Tabs Fluent
-    local Tabs = {
-        Main = Window:AddTab({ Title = "MAIN", Icon = "settings" }),
-        ESP = Window:AddTab({ Title = "ESP SYSTEM", Icon = "eye" }),
-        Utility = Window:AddTab({ Title = "UTILITY", Icon = "box" }),
-        Info = Window:AddTab({ Title = "INFO", Icon = "info" })
-    }
+    local mainFrame = Instance.new("Frame", ScreenGui)
+    mainFrame.Size = UDim2.new(0, 390, 0, 480)
+    mainFrame.Position = UDim2.new(0.5, -195, 0.5, -240)
+    mainFrame.BackgroundColor3 = darkPurple
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 16)
+    
+    local mainStroke = Instance.new("UIStroke", mainFrame)
+    mainStroke.Color = themeColor
+    mainStroke.Thickness = 2
 
-    -- ---------------- TAB MAIN ----------------
-    Tabs.Main:AddToggle("FlyToggle", {Title = "Fly Mode", Default = false, Callback = function(Value)
-        flyEnabled = Value if Value then startFlyMode() else stopFlyMode() end
-    end})
+    local header = Instance.new("Frame", mainFrame)
+    header.Size = UDim2.new(1, 0, 0, 60)
+    header.BackgroundColor3 = themeColor
+    header.BackgroundTransparency = 0.3
+    Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
+    
+    local title = Instance.new("TextLabel", header)
+    title.Size = UDim2.new(1, -30, 0.5, 0)
+    title.Position = UDim2.new(0, 20, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "DRIP CLIENT PREMIUM"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Font = Enum.Font.GothamBlack
+    title.TextSize = 18
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local subtitle = Instance.new("TextLabel", header)
+    subtitle.Size = UDim2.new(1, -30, 0.3, 0)
+    subtitle.Position = UDim2.new(0, 20, 0, 34)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Text = "Status: Terautentikasi Aman Server"
+    subtitle.TextColor3 = Color3.fromRGB(0, 255, 120)
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextSize = 11
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
 
-    Tabs.Main:AddToggle("SpeedToggle", {Title = "Speed Boost", Default = false, Callback = function(Value)
-        speedEnabled = Value local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = Value and fastSpeed or normalSpeed end
-    end})
+    local tabBar = Instance.new("Frame", mainFrame)
+    tabBar.Size = UDim2.new(0.94, 0, 0, 35)
+    tabBar.Position = UDim2.new(0.03, 0, 0, 70)
+    tabBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Instance.new("UICorner", tabBar).CornerRadius = UDim.new(0, 6)
 
-    Tabs.Main:AddToggle("NoclipToggle", {Title = "NoClip", Default = false, Callback = function(Value)
-        noclipEnabled = Value if Value then startNoclip() else stopNoclip() end
-    end})
+    local tabs, contents = {}, {}
+    local function createTab(name, idx)
+        local btn = Instance.new("TextButton", tabBar)
+        btn.Size = UDim2.new(0.25, -2, 1, -6)
+        btn.Position = UDim2.new((idx-1)*0.25, 2, 0, 3)
+        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+        btn.BackgroundTransparency = 0.5
+        btn.Text = name
+        btn.TextColor3 = Color3.fromRGB(180, 180, 180)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 10
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+        
+        local content = Instance.new("ScrollingFrame", mainFrame)
+        content.Size = UDim2.new(0.94, 0, 0, 350)
+        content.Position = UDim2.new(0.03, 0, 0, 115)
+        content.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+        content.BackgroundTransparency = 0.4
+        content.BorderSizePixel = 0
+        content.ScrollBarThickness = 4
+        content.ScrollBarImageColor3 = themeColor
+        content.Visible = false
+        content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        content.ScrollingDirection = Enum.ScrollingDirection.Y
+        
+        local layout = Instance.new("UIListLayout", content)
+        layout.Padding = UDim.new(0, 6)
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
+        table.insert(tabs, btn) table.insert(contents, content)
+        
+        btn.MouseButton1Click:Connect(function()
+            for i, b in ipairs(tabs) do b.TextColor3 = Color3.fromRGB(180, 180, 180) b.BackgroundTransparency = 0.5 contents[i].Visible = false end
+            btn.TextColor3 = Color3.new(1,1,1) btn.BackgroundTransparency = 0.1 content.Visible = true
+        end)
+        return content
+    end
+    
+    local tabMain = createTab("MAIN", 1)
+    local tabESP = createTab("ESP SYSTEM", 2)
+    local tabUtility = createTab("UTILITY", 3)
+    local tabInfo = createTab("INFO", 4)
 
-    Tabs.Main:AddToggle("InfJumpToggle", {Title = "Infinity Jump", Default = false, Callback = function(Value)
-        infinityJumpEnabled = Value
-    end})
-
-    Tabs.Main:AddToggle("GodModeToggle", {Title = "God Mode", Default = false, Callback = function(Value)
-        antiDamageEnabled = Value
-        if Value then setupAntiDamage() else if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect() end antiDamageHeartbeat = nil end
-    end})
-
-    Tabs.Main:AddToggle("SpinToggle", {Title = "Spin Muter", Default = false, Callback = function(Value)
-        toggleSpin(Value)
-    end})
-
-    Tabs.Main:AddToggle("InvisToggle", {Title = "Invisible Mode", Default = false, Callback = function(Value)
-        toggleInvisible(Value)
-    end})
-
-    -- ---------------- TAB ESP ----------------
-    Tabs.ESP:AddToggle("ESPBoxToggle", {Title = "ESP Box (Hitam)", Default = false, Callback = function(Value) espEnabled = Value end})
-    Tabs.ESP:AddToggle("ESPLineToggle", {Title = "ESP Line", Default = false, Callback = function(Value) lineEnabled = Value end})
-    Tabs.ESP:AddToggle("ESPSkelToggle", {Title = "ESP Skeleton", Default = false, Callback = function(Value) skeletonEnabled = Value end})
-    Tabs.ESP:AddToggle("CounterToggle", {Title = "Player Counter", Default = false, Callback = function(Value) playerCounterEnabled = Value end})
-
-    -- ---------------- TAB UTILITY ----------------
-    local function getPlayerNames()
-        local list = {} for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then table.insert(list, p.Name) end end return list
+    local function createToggle(parent, text, default, callback)
+        local frame = Instance.new("Frame", parent) frame.Size = UDim2.new(0.95, 0, 0, 38) frame.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+        local label = Instance.new("TextLabel", frame) label.Size = UDim2.new(0.65, 0, 1, 0) label.Position = UDim2.new(0.05, 0, 0, 0) label.BackgroundTransparency = 1 label.Text = text label.TextColor3 = Color3.new(1,1,1) label.Font = Enum.Font.Gotham label.TextSize = 12 label.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local switch = Instance.new("Frame", frame) switch.Size = UDim2.new(0, 40, 0, 20) switch.Position = UDim2.new(0.83, 0, 0.5, -10) switch.BackgroundColor3 = default and themeColor or Color3.fromRGB(70, 70, 80)
+        Instance.new("UICorner", switch).CornerRadius = UDim.new(0, 10)
+        local circle = Instance.new("Frame", switch) circle.Size = UDim2.new(0, 16, 0, 16) circle.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0.05, 0, 0.5, -8) circle.BackgroundColor3 = Color3.new(1,1,1)
+        Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+        
+        local state = default
+        local click = Instance.new("TextButton", frame) click.Size = UDim2.new(1, 0, 1, 0) click.BackgroundTransparency = 1 click.Text = ""
+        click.MouseButton1Click:Connect(function()
+            state = not state
+            TweenService:Create(switch, TweenInfo.new(0.18), {BackgroundColor3 = state and themeColor or Color3.fromRGB(70, 70, 80)}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.18), {Position = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0.05, 0, 0.5, -8)}):Play()
+            callback(state)
+        end)
     end
 
-    local TeleportDropdown = Tabs.Utility:AddDropdown("TeleportDropdown", {
-        Title = "TELEPORT KE PLAYER",
-        Values = getPlayerNames(),
-        Multi = false,
-        Default = nil,
-        Callback = function(Value)
-            if Value then
-                local plr = Players:FindFirstChild(Value)
-                if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
-                    showNotification("TELEPORT", "Teleport ke " .. plr.Name, 2, Color3.fromRGB(0,140,0))
+    createToggle(tabMain, "Fly Mode", false, function(s) flyEnabled = s if s then startFlyMode() else stopFlyMode() end end)
+    createToggle(tabMain, "Speed Boost", false, function(s) speedEnabled = s local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") if hum then hum.WalkSpeed = s and fastSpeed or normalSpeed end end)
+    createToggle(tabMain, "NoClip", false, function(s) noclipEnabled = s if s then startNoclip() else stopNoclip() end end)
+    createToggle(tabMain, "Infinity Jump", false, function(s) infinityJumpEnabled = s end)
+    createToggle(tabMain, "God Mode", false, function(s)
+        antiDamageEnabled = s
+        if s then
+            setupAntiDamage()
+        else
+            if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect() end
+            antiDamageHeartbeat = nil
+        end
+    end)
+    createToggle(tabMain, "Spin Muter", false, function(s) toggleSpin(s) end)
+    createToggle(tabMain, "Invisible Mode", false, function(s) toggleInvisible(s) end)
+
+    createToggle(tabESP, "ESP Box (Hitam)", false, function(s) espEnabled = s end)
+    createToggle(tabESP, "ESP Line", false, function(s) lineEnabled = s end)
+    createToggle(tabESP, "ESP Skeleton", false, function(s) skeletonEnabled = s end)
+    createToggle(tabESP, "Player Counter", false, function(s) playerCounterEnabled = s end)
+
+    -- TAB UTILITY DROPDOWN TELEPORT
+    local function createTeleportDropdown(parent)
+        local baseFrame = Instance.new("Frame", parent) baseFrame.Size = UDim2.new(0.95, 0, 0, 38) baseFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 55) baseFrame.ClipsDescendants = true
+        Instance.new("UICorner", baseFrame).CornerRadius = UDim.new(0, 6)
+        local mainButton = Instance.new("TextButton", baseFrame) mainButton.Size = UDim2.new(1, 0, 0, 38) mainButton.BackgroundTransparency = 1 mainButton.Text = "TELEPORT KE PLAYER" mainButton.TextColor3 = Color3.new(1,1,1) mainButton.Font = Enum.Font.GothamBold mainButton.TextSize = 12
+        local scrollList = Instance.new("ScrollingFrame", baseFrame) scrollList.Size = UDim2.new(1, 0, 0, 120) scrollList.Position = UDim2.new(0, 0, 0, 38) scrollList.BackgroundTransparency = 1 scrollList.ScrollBarThickness = 4 scrollList.ScrollBarImageColor3 = themeColor
+        local listLayout = Instance.new("UIListLayout", scrollList) listLayout.Padding = UDim.new(0, 4) listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        
+        local isOpen = false
+        mainButton.MouseButton1Click:Connect(function()
+            isOpen = not isOpen
+            if isOpen then
+                for _, c in pairs(scrollList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+                for _, plr in pairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer then
+                        local pBtn = Instance.new("TextButton", scrollList) pBtn.Size = UDim2.new(0.92, 0, 0, 26) pBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40) pBtn.TextColor3 = Color3.fromRGB(230, 230, 230) pBtn.Font = Enum.Font.Gotham pBtn.TextSize = 11 pBtn.Text = plr.DisplayName or plr.Name
+                        Instance.new("UICorner", pBtn).CornerRadius = UDim.new(0, 4)
+                        pBtn.MouseButton1Click:Connect(function()
+                            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                                LocalPlayer.Character.HumanoidRootPart.CFrame = plr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+                                showNotification("TELEPORT", "Teleport ke " .. plr.Name, 2, Color3.fromRGB(0,140,0))
+                            end
+                            isOpen = false TweenService:Create(baseFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.95, 0, 0, 38)}):Play()
+                        end)
+                    end
+                end
+                scrollList.CanvasSize = UDim2.new(0,0,0, listLayout.AbsoluteContentSize.Y + 10)
+                TweenService:Create(baseFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.95, 0, 0, 165)}):Play()
+            else
+                TweenService:Create(baseFrame, TweenInfo.new(0.2), {Size = UDim2.new(0.95, 0, 0, 38)}):Play()
+            end
+        end)
+    end
+    createTeleportDropdown(tabUtility)
+
+    -- ================== FREEZE ALL PLAYERS (VISUAL ONLY) ==================
+    local freezeAllEnabled = false
+
+    local function freezeAllPlayers(state)
+        freezeAllEnabled = state
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character then
+                for _, part in pairs(p.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        pcall(function() part.Anchored = state end)
+                    end
                 end
             end
         end
-    })
+    end
 
-    Tabs.Utility:AddButton({
-        Title = "🔄 Refresh Daftar Player",
-        Callback = function()
-            TeleportDropdown:SetValues(getPlayerNames())
-        end
-    })
+    createToggle(tabUtility, "❄️ Freeze All Player (Visual)", false, function(s)
+        freezeAllPlayers(s)
+        showNotification("FREEZE", s and "Semua player dibekukan!" or "Freeze dinonaktifkan", 2, s and Color3.fromRGB(0,180,255) or Color3.fromRGB(200,200,200))
+    end)
 
-    Tabs.Utility:AddToggle("FreezeAllToggle", {Title = "❄️ Freeze All Player (Visual)", Default = false, Callback = function(Value)
-        freezeAllEnabled = Value
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                for _, part in pairs(p.Character:GetDescendants()) do if part:IsA("BasePart") then pcall(function() part.Anchored = Value end) end end
-            end
-        end
-        showNotification("FREEZE", Value and "Semua player dibekukan!" or "Freeze dinonaktifkan", 2, Value and Color3.fromRGB(0,180,255) or Color3.fromRGB(200,200,200))
-    end})
-
-    -- FREEZE DIRI SENDIRI BUTTON TRIGGER INTEGRATION
+    -- ================== FREEZE DIRI SENDIRI (TOMBOL DI KANAN ATAS, BISA DIGESER) ==================
     local freezeSelfEnabled = false
     local freezeSelfBtn = nil
-    local ScreenGui = game.CoreGui:FindFirstChild("DripClient") or game.CoreGui:FindFirstChild("Fluent")
+    local freezeSelfBtnVisible = false
 
     local function applyFreezeSelf(state)
         freezeSelfEnabled = state
         local myChar = LocalPlayer.Character
-        if myChar and myChar:FindFirstChild("HumanoidRootPart") then myChar.HumanoidRootPart.Anchored = state end
+        if myChar then
+            local hrp = myChar:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.Anchored = state
+            end
+        end
         if freezeSelfBtn then
             freezeSelfBtn.BackgroundColor3 = state and Color3.fromRGB(0, 180, 255) or Color3.fromRGB(30, 30, 50)
             freezeSelfBtn.Text = state and "❄ ON" or "❄ OFF"
         end
     end
 
-    Tabs.Utility:AddToggle("FreezeSelfToggle", {Title = "❄️ Freeze Diri Sendiri (Tombol)", Default = false, Callback = function(state)
-        if state then
-            if not freezeSelfBtn and ScreenGui then
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if freezeSelfEnabled then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = true end
+        end
+    end)
+
+    createToggle(tabUtility, "❄️ Freeze Diri Sendiri (Tombol)", false, function(s)
+        freezeSelfBtnVisible = s
+        if s then
+            if not freezeSelfBtn then
                 freezeSelfBtn = Instance.new("TextButton")
                 freezeSelfBtn.Parent = ScreenGui
                 freezeSelfBtn.Size = UDim2.new(0, 75, 0, 38)
-                freezeSelfBtn.Position = UDim2.new(1, -85, 0, 70)
+                freezeSelfBtn.Position = UDim2.new(1, -85, 0, 10)
                 freezeSelfBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
                 freezeSelfBtn.BorderSizePixel = 0
                 freezeSelfBtn.Text = "❄ OFF"
@@ -733,51 +839,157 @@ local function loadMainScript()
                 stroke.Color = Color3.fromRGB(0, 200, 255)
                 stroke.Thickness = 1.5
                 
-                local dragging, dragStart, startPos, clickStart = false, nil, nil, nil
+                local dragging = false
+                local dragStart = nil
+                local startPos = nil
+                local clickStart = nil
+                
                 freezeSelfBtn.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                        dragging = true dragStart = input.Position startPos = freezeSelfBtn.Position clickStart = input.Position
+                        dragging = true
+                        dragStart = input.Position
+                        startPos = freezeSelfBtn.Position
+                        clickStart = input.Position
                     end
                 end)
+                
                 freezeSelfBtn.InputEnded:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         dragging = false
+                        -- Deteksi apakah ini klik atau drag (threshold 8px)
                         if clickStart and dragStart then
                             local deltaX = math.abs(clickStart.X - dragStart.X)
                             local deltaY = math.abs(clickStart.Y - dragStart.Y)
-                            if deltaX < 8 and deltaY < 8 then applyFreezeSelf(not freezeSelfEnabled) end
+                            if deltaX < 8 and deltaY < 8 then
+                                applyFreezeSelf(not freezeSelfEnabled)
+                            end
                         end
+                        -- Clamp posisi agar tidak keluar layar
+                        task.wait(0.05)
+                        local absX = freezeSelfBtn.AbsolutePosition.X
+                        local absY = freezeSelfBtn.AbsolutePosition.Y
+                        local maxX = Camera.ViewportSize.X - freezeSelfBtn.AbsoluteSize.X
+                        local maxY = Camera.ViewportSize.Y - freezeSelfBtn.AbsoluteSize.Y
+                        if absX < 0 or absX > maxX or absY < 0 or absY > maxY then
+                            local newX = math.clamp(absX, 0, maxX)
+                            local newY = math.clamp(absY, 0, maxY)
+                            freezeSelfBtn.Position = UDim2.new(0, newX, 0, newY)
+                        end
+                        clickStart = nil
                     end
                 end)
+                
                 freezeSelfBtn.InputChanged:Connect(function(input)
                     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                         local delta = input.Position - dragStart
-                        freezeSelfBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                        local newX = startPos.X.Offset + delta.X
+                        local newY = startPos.Y.Offset + delta.Y
+                        local maxX = Camera.ViewportSize.X - freezeSelfBtn.AbsoluteSize.X
+                        local maxY = Camera.ViewportSize.Y - freezeSelfBtn.AbsoluteSize.Y
+                        newX = math.clamp(newX, 0, maxX)
+                        newY = math.clamp(newY, 0, maxY)
+                        freezeSelfBtn.Position = UDim2.new(0, newX, 0, newY)
                     end
                 end)
-            elseif freezeSelfBtn then
+                
+                freezeSelfBtn.Size = UDim2.new(0, 0, 0, 38)
+                TweenService:Create(freezeSelfBtn, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
+                    Size = UDim2.new(0, 75, 0, 38)
+                }):Play()
+            else
                 freezeSelfBtn.Visible = true
             end
         else
             applyFreezeSelf(false)
-            if freezeSelfBtn then freezeSelfBtn.Visible = false end
+            if freezeSelfBtn then
+                TweenService:Create(freezeSelfBtn, TweenInfo.new(0.15), {
+                    Size = UDim2.new(0, 0, 0, 38)
+                }):Play()
+                task.delay(0.2, function()
+                    if freezeSelfBtn then
+                        freezeSelfBtn.Visible = false
+                    end
+                end)
+            end
         end
-    end})
+    end)
 
-    -- ---------------- TAB INFO ----------------
-    local infoSection = Tabs.Info:AddSection("Informasi Lisensi")
-    local ExecLabel = Tabs.Info:AddParagraph({Title = "Executor", Content = userExecutor})
-    local PacketLabel = Tabs.Info:AddParagraph({Title = "Jenis Paket", Content = keyJenis})
-    local DurationLabel = Tabs.Info:AddParagraph({Title = "Sisa Durasi Server", Content = "Menghubungkan..."})
-    Tabs.Info:AddParagraph({Title = "Developer Contact", Content = "Developer: Putzzdev\nWhatsApp: 088976255131"})
+    -- ================== TAB INFO ==================
+    local infoBox = Instance.new("Frame", tabInfo) infoBox.Size = UDim2.new(0.95, 0, 0, 150) infoBox.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    Instance.new("UICorner", infoBox).CornerRadius = UDim.new(0, 8)
+    
+    local iLabel = Instance.new("TextLabel", infoBox) iLabel.Size = UDim2.new(1, 0, 0, 25) iLabel.BackgroundTransparency = 1 iLabel.Text = "INFORMASI LISENSI" iLabel.TextColor3 = themeColor iLabel.Font = Enum.Font.GothamBold iLabel.TextSize = 12
 
-    -- Runtime Sync Realtime Countdown Label ke Fluent
-    infoKeyCountdownLabel = {
-        SetText = function(_, text) pcall(function() DurationLabel:SetText(text) end) end
-    }
+    local executorText = Instance.new("TextLabel", infoBox) executorText.Size = UDim2.new(0.92, 0, 0, 22) executorText.Position = UDim2.new(0.04, 0, 0, 30) executorText.BackgroundTransparency = 1 executorText.TextColor3 = Color3.fromRGB(200, 210, 255) executorText.Font = Enum.Font.Gotham executorText.TextSize = 11 executorText.Text = "Executor: " .. userExecutor executorText.TextXAlignment = Enum.TextXAlignment.Left
 
-    Window:SelectTab(1)
-    LocalPlayer.CharacterAdded:Connect(function() task.wait(1) if noclipEnabled then startNoclip() end if flyEnabled then startFlyMode() end end)
+    local keyTypeText = Instance.new("TextLabel", infoBox) keyTypeText.Size = UDim2.new(0.92, 0, 0, 22) keyTypeText.Position = UDim2.new(0.04, 0, 0, 52) keyTypeText.BackgroundTransparency = 1 keyTypeText.TextColor3 = Color3.fromRGB(200, 210, 255) keyTypeText.Font = Enum.Font.Gotham executorText.TextSize = 11 keyTypeText.Text = "Jenis Paket: " .. keyJenis keyTypeText.TextXAlignment = Enum.TextXAlignment.Left
+
+    infoKeyCountdownLabel = Instance.new("TextLabel", infoBox)
+    infoKeyCountdownLabel.Size = UDim2.new(0.92, 0, 0, 22)
+    infoKeyCountdownLabel.Position = UDim2.new(0.04, 0, 0, 74)
+    infoKeyCountdownLabel.BackgroundTransparency = 1
+    infoKeyCountdownLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+    infoKeyCountdownLabel.Font = Enum.Font.GothamBold
+    infoKeyCountdownLabel.TextSize = 11
+    infoKeyCountdownLabel.Text = "Menghubungkan sisa durasi server..."
+    infoKeyCountdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local infoDevLabel = Instance.new("TextLabel", infoBox) infoDevLabel.Size = UDim2.new(0.92, 0, 0, 45) infoDevLabel.Position = UDim2.new(0.04, 0, 0, 100) infoDevLabel.BackgroundTransparency = 1 infoDevLabel.TextColor3 = Color3.fromRGB(160, 160, 170) infoDevLabel.Font = Enum.Font.Gotham infoDevLabel.TextSize = 10 infoDevLabel.Text = "Developer: Putzzdev\nWhatsApp: 088976255131" infoDevLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    tabs[1].TextColor3 = Color3.new(1,1,1) tabs[1].BackgroundTransparency = 0.1 contents[1].Visible = true
+    
+    local openBtn = Instance.new("ImageButton", ScreenGui) openBtn.Size = UDim2.new(0, 50, 0, 50) openBtn.Position = UDim2.new(0, 15, 0.5, -25) openBtn.BackgroundTransparency = 1 openBtn.Image = "rbxassetid://72495850369898" openBtn.Active = true openBtn.Draggable = true
+    Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 10)
+    local obs = Instance.new("UIStroke", openBtn) obs.Color = Color3.new(1,1,1) obs.Thickness = 1.2
+
+    local menuOpen = true
+    openBtn.MouseButton1Click:Connect(function()
+        menuOpen = not menuOpen
+        if menuOpen then mainFrame.Visible = true TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position = UDim2.new(0.5, -195, 0.5, -240)}):Play()
+        else TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position = UDim2.new(0.5, -195, 1, 10)}):Play() task.wait(0.2) mainFrame.Visible = false end
+    end)
+end
+
+-- ================== PERBAIKAN & PENAMBAHAN TOGGLE MOBILE ==================
+local function createMobileToggle()
+    -- Hancurkan tombol lama jika ada agar tidak menumpuk saat respawn
+    if game.CoreGui:FindFirstChild("DripMobileToggle") then 
+        game.CoreGui.DripMobileToggle:Destroy() 
+    end
+
+    local toggleGui = Instance.new("ScreenGui", game.CoreGui)
+    toggleGui.Name = "DripMobileToggle"
+    
+    local mBtn = Instance.new("TextButton", toggleGui)
+    mBtn.Size = UDim2.new(0, 65, 0, 30)
+    mBtn.Position = UDim2.new(0, 15, 0, 15) -- Pojok kiri atas layar HP
+    mBtn.BackgroundColor3 = Color3.fromRGB(156, 39, 176) -- Warna ungu khas Drip Client
+    mBtn.BackgroundTransparency = 0.2
+    mBtn.Text = "DRIP MENU"
+    mBtn.TextColor3 = Color3.new(1, 1, 1)
+    mBtn.Font = Enum.Font.GothamBold
+    mBtn.TextSize = 10
+    mBtn.Active = true
+    mBtn.Draggable = true -- Bisa digeser ke mana aja kalau mengganggu gameplay
+    
+    Instance.new("UICorner", mBtn).CornerRadius = UDim.new(0, 8)
+    local btnStroke = Instance.new("UIStroke", mBtn)
+    btnStroke.Color = Color3.new(1, 1, 1)
+    btnStroke.Thickness = 1.2
+
+    mBtn.MouseButton1Click:Connect(function()
+        local dripClient = game.CoreGui:FindFirstChild("DripClient")
+        if dripClient then
+            local mainFrame = dripClient:FindFirstChildOfClass("Frame")
+            if mainFrame then
+                mainFrame.Visible = not mainFrame.Visible
+                -- Otomatis reset posisi ke tengah agar tidak hilang ke bawah layar
+                if mainFrame.Visible then
+                    mainFrame.Position = UDim2.new(0.5, -195, 0.5, -240)
+                end
+            end
+        end
+    end)
 end
 
 -- ================== GUI LAYOUT AUTH KEY SYSTEM ==================
@@ -935,7 +1147,9 @@ local function runPremiumSuccessProgress()
         game.CoreGui.DripKeySystem:Destroy()
     end
 
+    -- Muat script cheat utama dan buat tombol toggle mobile melayang
     pcall(loadMainScript)
+    pcall(createMobileToggle)
 end
 
 VerifyBtn.MouseButton1Click:Connect(function()
@@ -958,7 +1172,8 @@ VerifyBtn.MouseButton1Click:Connect(function()
         runPremiumSuccessProgress()
     else
         StatusLabel.Text = message 
-        StatusLabel.TextColor3 = Color3.fromRGB(255,0,0) end
+        StatusLabel.TextColor3 = Color3.fromRGB(255,0,0) 
+    end
 end)
 
 for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
@@ -966,4 +1181,14 @@ Players.PlayerAdded:Connect(function(p) createESP(p) createSkeleton(p) end)
 Players.PlayerRemoving:Connect(function(p)
     if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
     if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
+end)
+
+-- Loop pemicu respawn agar tombol toggle mobile tetap ada saat mati/reset karakter
+LocalPlayer.CharacterAdded:Connect(function() 
+    task.wait(1) 
+    if keyValidGlobal then
+        createMobileToggle()
+    end
+    if noclipEnabled then startNoclip() end 
+    if flyEnabled then startFlyMode() end 
 end)
