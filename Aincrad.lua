@@ -822,34 +822,11 @@ local function loadMainScript()
     TabInfo:CreateLabel("Executor: " .. userExecutor)
     TabInfo:CreateLabel("Paket: " .. keyJenis)
 
-    -- Label countdown (disimpan di variable global agar bisa diupdate)
+    -- Label countdown
     local countdownElement = TabInfo:CreateLabel("Menghubungkan sisa durasi server...")
-    infoKeyCountdownLabel = {
-        Text = "Menghubungkan sisa durasi server...",
-    }
-    -- Override agar countdown loop bisa update label Rayfield
-    -- Rayfield label tidak bisa diupdate langsung, jadi kita gunakan SetText jika tersedia,
-    -- atau kita buat workaround dengan rekreaasi label. Simpan referensi ke frame-nya.
-    task.spawn(function()
-        while true do
-            task.wait(1)
-            if keyValidGlobal and keyExpiryTime > 0 then
-                local _, _, _, _, timeStr = getTimeRemaining(keyExpiryTime)
-                local txt
-                if os.time() > keyExpiryTime then
-                    txt = "⚠️ Key EXPIRED! Harap ganti key."
-                else
-                    txt = "⏱ Sisa Durasi: " .. timeStr
-                end
-                -- Update via Rayfield Set jika tersedia
-                pcall(function()
-                    if countdownElement and countdownElement.Set then
-                        countdownElement:Set(txt)
-                    end
-                end)
-            end
-        end
-    end)
+    
+    -- Update infoKeyCountdownLabel untuk countdown timer
+    infoKeyCountdownLabel = countdownElement
 
     TabInfo:CreateDivider()
     TabInfo:CreateSection("Developer")
@@ -870,10 +847,8 @@ local function loadMainScript()
 end
 
 -- ================== KEY SYSTEM RAYFIELD ==================
--- Gunakan built-in key system Rayfield dengan verifikasi custom via Firebase
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
--- Tampilkan window key system dulu
 local KeyWindow = Rayfield:CreateWindow({
     Name = "Drip Client - Verifikasi",
     LoadingTitle = "Drip Client",
@@ -890,18 +865,23 @@ KeyTab:CreateSection("Autentikasi Key Server")
 
 local statusLabel = KeyTab:CreateLabel("Menunggu verifikasi lisensi...")
 
+-- Variabel untuk menyimpan input key
+local inputKeyValue = ""
+
 KeyTab:CreateInput({
     Name = "Masukkan Key Premium",
     PlaceholderText = "Input key server di sini...",
     RemoveTextAfterFocusLost = false,
     Flag = "KeyInput",
-    Callback = function() end,
+    Callback = function(text)
+        inputKeyValue = text  -- Simpan setiap kali user mengetik
+    end,
 })
 
 KeyTab:CreateButton({
     Name = "AUTENTIKASI KEY",
     Callback = function()
-        local inputKey = Rayfield.Flags["KeyInput"] and Rayfield.Flags["KeyInput"].Value or ""
+        local inputKey = inputKeyValue  -- Ambil dari variabel
         inputKey = tostring(inputKey):gsub("%s+", "")
 
         if inputKey == "" then
@@ -919,7 +899,6 @@ KeyTab:CreateButton({
             pcall(function() statusLabel:Set("✅ Key Valid! Memuat interface...") end)
             Rayfield:Notify({Title = "Sukses!", Content = "Key valid! Interface sedang dimuat.", Duration = 3, Image = 4483362458})
             task.wait(1.5)
-            -- Destroy key window lalu muat main UI
             pcall(function() KeyWindow:Destroy() end)
             task.wait(0.3)
             loadMainScript()
