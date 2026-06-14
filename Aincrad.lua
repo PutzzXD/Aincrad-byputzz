@@ -1,126 +1,117 @@
 -- ====================================================================
--- CHIP BOM CUSTOM CLIENT - BASE SCRIPT
+-- CHIP BOM PREMIUM ADVANCED CLIENT (NATIVE RAYFIELD UI)
 -- ====================================================================
+-- Fitur: Auto ESP Bom Akurat Berdasarkan Data Player Board (1-25)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
--- Membuat Window Utama UI
 local Window = Rayfield:CreateWindow({
-   Name = "Chip Bom Client v1.0",
-   LoadingTitle = "Loading Custom Script...",
+   Name = "DRIP CHIP BOM CLIENT",
+   LoadingTitle = "Menginisialisasi Engine Chip Bom...",
    LoadingSubtitle = "by Putzzdev",
-   ConfigurationSaving = {
-      Enabled = false
-   },
-   Discord = {
-      Enabled = false
-   },
+   ConfigurationSaving = { Enabled = false },
    KeySystem = false
 })
 
--- Variables untuk State Fitur
+-- Global States
 local espBomEnabled = false
-local autoReadyEnabled = false
-local espObjects = {}
+local createdAdornments = {}
 
 -- ====================================================================
--- KANVAS LOGIKA / FUNGSI UTAMA (SISTEM ESP)
+-- ENGINE LOGIKA ESP BOM
 -- ====================================================================
 
--- Fungsi untuk membuat highlight visual pada objek bom
-local function applyBomESP(object)
-   if not object:IsA("BasePart") then return end
-   
-   -- Membuat Box Highlight merah di sekitar kotak bom lawan
-   local highlight = Instance.new("BoxHandleAdornment")
-   highlight.Name = "BomESP_Adornment"
-   highlight.Size = object.Size + Vector3.new(0.1, 0.1, 0.1)
-   highlight.Color3 = Color3.fromRGB(255, 0, 0) -- Warna Merah untuk Bom
-   highlight.AlwaysOnTop = true
-   highlight.ZIndex = 10
-   highlight.Adornment = object
-   highlight.Transparency = 0.4
-   highlight.Parent = object
-   
-   table.insert(espObjects, highlight)
+-- Fungsi untuk membersihkan semua highlight ESP yang sedang aktif
+local function clearAllESP()
+    for _, adornment in ipairs(createdAdornments) do
+        if adornment then pcall(function() adornment:Destroy() end) end
+    end
+    createdAdornments = {}
 end
 
--- Fungsi untuk membersihkan semua visual ESP
-local function clearBomESP()
-   for _, obj in ipairs(espObjects) do
-      if obj and obj.Parent then
-         obj:Destroy()
-      end
-   end
-   espObjects = {}
-end
+-- Fungsi utama untuk mendeteksi data board dan memberi highlight merah pada bom lawan
+local function updateBomESP()
+    if not espBomEnabled then return end
+    clearAllESP()
 
--- Fungsi Tracker untuk memantau perubahan folder permainan
--- Catatan: Kamu perlu menyesuaikan path folder dan nama "Bomb" sesuai struktur asli game
-local function startBomTracker()
-   task.spawn(function()
-      while espBomEnabled do
-         -- Contoh logika pemindaian: mencari objek bernama 'Bomb' di Workspace
-         -- Pastikan untuk memeriksa Remote Spy atau Explorer game kamu terlebih dahulu
-         for _, desc in ipairs(workspace:GetDescendants()) do
-            if desc.Name == "Bomb" or desc:SetAttribute("IsBomb") == true then
-               if not desc:FindFirstChild("BomESP_Adornment") then
-                  applyBomESP(desc)
-               end
+    -- Cari semua player lain di dalam game (Lawan)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local boardFolder = player:FindFirstChild("Board")
+            
+            -- Pastikan folder board player tersebut ada dan valid
+            if boardFolder then
+                -- Scan slot 1 sampai 25 pada data player
+                for i = 1, 25 do
+                    local slot = boardFolder:FindFirstChild(tostring(i))
+                    local slotType = slot and slot:FindFirstChild("Type")
+                    
+                    -- Jika tipenya adalah "Bomb", cari objek fisik 3D-nya untuk di-highlight
+                    if slotType and slotType.Value == "Bomb" then
+                        -- Jalur fisik 3D kotak keripik lawan di workspace
+                        local targetBoard3D = Workspace:FindFirstChild("Boards") and Workspace.Boards:FindFirstChild(player.Name)
+                        local chipModel = targetBoard3D and targetBoard3D:FindFirstChild("Chips") and targetBoard3D.Chips:FindFirstChild(tostring(i))
+                        
+                        -- Cari part utama di dalam model chip (biasanya BasePart/MeshPart/Part utama)
+                        local targetPart = chipModel and (chipModel:IsA("BasePart") and chipModel or chipModel:FindFirstChildWhichIsA("BasePart"))
+                        
+                        if targetPart and not targetPart:FindFirstChild("DripBomVisual") then
+                            -- Buat Box Highlighting Tembus Pandang Berwarna Merah menyala
+                            local boxAdornment = Instance.new("BoxHandleAdornment")
+                            boxAdornment.Name = "DripBomVisual"
+                            boxAdornment.Size = targetPart.Size + Vector3.new(0.1, 0.2, 0.1)
+                            boxAdornment.Color3 = Color3.fromRGB(255, 30, 30) -- Merah Bom
+                            boxAdornment.AlwaysOnTop = true
+                            boxAdornment.ZIndex = 10
+                            boxAdornment.Transparency = 0.45
+                            boxAdornment.Adornment = targetPart
+                            boxAdornment.Parent = targetPart
+                            
+                            table.insert(createdAdornments, boxAdornment)
+                        end
+                    end
+                end
             end
-         end
-         task.wait(1) -- Pemindaian berkala setiap 1 detik agar tidak lag
-      end
-   end)
+        end
+    end
 end
 
+-- Loop dinamis menggunakan RenderStepped agar posisi ESP selalu realtime & responsif tanpa delay
+RunService.RenderStepped:Connect(function()
+    if espBomEnabled then
+        updateBomESP()
+    end
+end)
+
 -- ====================================================================
--- INTERFACE / TOMBOL UI (TAB & TOGGLES)
+-- INTERFACE / STRUKTUR UI FORM REVENGE
 -- ====================================================================
 
--- Tab Utama untuk Fitur Hack Game
-local MainTab = Window:CreateTab("Main Hacks", 4483362458) -- Icon ID
+local MainTab = Window:CreateTab("Game Hacks", 4483362458)
 
-local EspToggle = MainTab:CreateToggle({
-   Name = "ESP Bom (Revealer)",
+MainTab:CreateToggle({
+   Name = "ESP Reveal Bom",
    CurrentValue = false,
-   Flag = "EspBomFlag",
+   Flag = "DripEspBomFlag",
    Callback = function(Value)
       espBomEnabled = Value
       if Value then
-         Rayfield:Notify({Title = "ESP Aktif", Content = "Mulai melacak posisi bom lawan...", Duration = 2, Image = 4483362458})
-         startBomTracker()
-      else
-         clearBomESP()
-         Rayfield:Notify({Title = "ESP Nonaktif", Content = "Visual bom dibersihkan.", Duration = 2, Image = 4483362458})
-      end
+          Rayfield:Notify({Title = "ESP AKTIF", Content = "Membaca database kartu lawan... Kotak bom ditandai MERAH!", Duration = 3})
+          updateBomESP()
+       else
+          clearAllESP()
+          Rayfield:Notify({Title = "ESP NONAKTIF", Content = "Semua visual penanda bom telah dibersihkan.", Duration = 2})
+       end
    end,
 })
 
--- Tab Tambahan untuk Otomasi
-local AutomationTab = Window:CreateTab("Automation", 4483362458)
-
-local ReadyToggle = AutomationTab:CreateToggle({
-   Name = "Auto Ready / Join Match",
-   CurrentValue = false,
-   Flag = "AutoReadyFlag",
-   Callback = function(Value)
-      autoReadyEnabled = Value
-      
-      -- Kerangka dasar loop untuk mengklik tombol Ready otomatis
-      task.spawn(function()
-         while autoReadyEnabled do
-            -- Ganti path ini dengan RemoteEvent atau UI Button Klik milik game asli
-            -- pcall(function() game:GetService("ReplicatedStorage").RemoteEvents.Ready:FireServer() end)
-            task.wait(2)
-         end
-      end)
-   end,
-})
-
--- Tab Informasi Developer
-local InfoTab = Window:CreateTab("Credits", 4483362458)
-InfoTab:CreateLabel("Developer: Putzzdev")
-InfoTab:CreateLabel("Dibuat khusus untuk Chip Bom Roblox")
+local CreditsTab = Window:CreateTab("Credits", 4483362458)
+CreditsTab:CreateLabel("Developer: Putzzdev")
+CreditsTab:CreateLabel("Script khusus project baru Chip Bom")
 
 Rayfield:LoadConfiguration()
