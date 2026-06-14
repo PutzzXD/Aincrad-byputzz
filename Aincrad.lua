@@ -73,15 +73,62 @@ local function initObjectESP()
     for _, obj in pairs(workspace:GetDescendants()) do
         local name = obj.Name
 
-        -- Bomb Candy → merah
+        -- chip yang mengandung Bomb Candy di dalamnya → highlight chip itu merah
+        -- Logika: cari semua BasePart/MeshPart bernama "chip", cek apakah parent/ancestor-nya punya "Bomb Candy"
+        if (name == "chip") and (obj:IsA("BasePart") or obj:IsA("MeshPart")) then
+            -- Cek apakah dalam parent chain ada Bomb Candy
+            local hasBomb = false
+            local target  = obj.Parent -- biasanya chip ada di dalam model slot/tile
+            if target then
+                -- Cek apakah ada Bomb Candy di dalam parent yang sama (saudara)
+                if target:FindFirstChild("Bomb Candy") then
+                    hasBomb = true
+                end
+                -- Atau cek parent dari parent
+                if target.Parent and target.Parent:FindFirstChild("Bomb Candy") then
+                    hasBomb = true
+                    target = target.Parent
+                end
+                -- Atau bomb candy langsung di parent obj
+                for _, child in pairs(target:GetChildren()) do
+                    if child.Name == "Bomb Candy" then hasBomb = true; break end
+                end
+            end
+
+            if hasBomb then
+                -- Highlight chip yang ada bombnya → merah
+                local existingHL = obj:FindFirstChildWhichIsA("Highlight")
+                if not existingHL then
+                    local hl = Instance.new("Highlight")
+                    hl.FillColor = C.red; hl.FillTransparency = 0.2
+                    hl.OutlineColor = Color3.fromRGB(255,50,50); hl.OutlineTransparency = 0
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl.Enabled = false; hl.Parent = obj
+                    local lbl = newText(C.red, 14)
+                    table.insert(bombLabels, {obj=obj, hl=hl, label=lbl})
+                end
+            end
+        end
+
+        -- Bomb Candy model itu sendiri (fallback - kalau chip approach ga work)
         if name == "Bomb Candy" and obj:IsA("Model") then
-            local hl = Instance.new("Highlight")
-            hl.FillColor = C.red; hl.FillTransparency = 0.35
-            hl.OutlineColor = Color3.fromRGB(255,100,100); hl.OutlineTransparency = 0
-            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-            hl.Enabled = false; hl.Parent = obj
-            local lbl = newText(C.red, 13)
-            table.insert(bombLabels, {obj=obj, hl=hl, label=lbl})
+            -- Cari parent chip-nya buat highlight
+            local chipPart = nil
+            local par = obj.Parent
+            if par then
+                chipPart = par:FindFirstChild("chip") or par:FindFirstChildWhichIsA("BasePart")
+            end
+            local targetObj = chipPart or obj
+            local existingHL = targetObj:FindFirstChildWhichIsA("Highlight")
+            if not existingHL then
+                local hl = Instance.new("Highlight")
+                hl.FillColor = C.red; hl.FillTransparency = 0.25
+                hl.OutlineColor = Color3.fromRGB(255,60,60); hl.OutlineTransparency = 0
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.Enabled = false; hl.Parent = targetObj
+                local lbl = newText(C.red, 14)
+                table.insert(bombLabels, {obj=targetObj, hl=hl, label=lbl, bombModel=obj})
+            end
         end
 
         -- bombCrate → orange
@@ -95,8 +142,8 @@ local function initObjectESP()
             table.insert(safeLabels, {obj=obj, hl=hl, label=lbl})
         end
 
-        -- Rainbow Mushroom → ungu
-        if name == "Rainbow Mushroom" and obj:IsA("Model") then
+        -- Rainbow Mushroom / Jamur Pelangi → ungu
+        if (name == "Rainbow Mushroom" or name == "Jamur Pelangi") and obj:IsA("Model") then
             local hl = Instance.new("Highlight")
             hl.FillColor = C.purple; hl.FillTransparency = 0.3
             hl.OutlineColor = Color3.fromRGB(220,120,255); hl.OutlineTransparency = 0
@@ -209,7 +256,7 @@ RunService.RenderStepped:Connect(function()
                 local dist    = math.floor((myPos - pp.Position).Magnitude)
                 if vis then
                     d.label.Position = Vector2.new(sp.X, sp.Y - 14)
-                    d.label.Text     = "💣 BOMB [" .. dist .. "m]"
+                    d.label.Text     = "💣 CHIP BOM! [" .. dist .. "m]"
                     d.label.Visible  = true
                     d.hl.Enabled     = true
                 else d.label.Visible=false; d.hl.Enabled=false end
