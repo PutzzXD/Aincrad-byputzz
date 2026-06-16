@@ -11,6 +11,9 @@ local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 
+-- Pindahkan atau deklarasikan Rayfield secara global agar bisa diakses oleh semua fungsi
+local Rayfield = nil 
+
 -- ================== DETEKSI NAMA EXECUTOR ==================
 local function detectExecutor()
     local executorName = "Unknown Executor"
@@ -385,41 +388,67 @@ end
 
 -- ================== REJOIN SERVER ==================
 local function rejoinServer()
-    Rayfield:Notify({
-        Title = "Rejoin",
-        Content = "Sedang merejoin server...",
-        Duration = 3,
-        Image = 4483362458
-    })
+    if Rayfield then
+        Rayfield:Notify({
+            Title = "Rejoin",
+            Content = "Sedang merejoin server...",
+            Duration = 3,
+            Image = 4483362458
+        })
+    end
     task.wait(1)
-    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    if #Players:GetPlayers() <= 1 then
+        LocalPlayer:Kick("\nRejoining...")
+        task.wait(0.5)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    else
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end
 end
 
 -- ================== SERVER HOP ==================
 local function serverHop()
-    Rayfield:Notify({
-        Title = "Server Hop",
-        Content = "Mencari server baru...",
-        Duration = 3,
-        Image = 4483362458
-    })
-    task.wait(1)
-    
-    -- Coba dapatkan server baru via TeleportService
-    local success, err = pcall(function()
-        TeleportService:Teleport(game.PlaceId)
-    end)
-    
-    if not success then
-        -- Fallback: reload game
+    if Rayfield then
         Rayfield:Notify({
             Title = "Server Hop",
-            Content = "Mencoba metode alternatif...",
+            Content = "Mencari server baru...",
             Duration = 3,
             Image = 4483362458
         })
+    end
+    task.wait(1)
+    
+    local success, err = pcall(function()
+        local serverList = {}
+        local req = game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+        local decoded = HttpService:JSONDecode(req)
+        
+        if decoded and decoded.data then
+            for _, server in ipairs(decoded.data) do
+                if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                    table.insert(serverList, server.id)
+                end
+            end
+        end
+        
+        if #serverList > 0 then
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, serverList[math.random(1, #serverList)], LocalPlayer)
+        else
+            error("Tidak menemukan server alternatif.")
+        end
+    end)
+    
+    if not success then
+        if Rayfield then
+            Rayfield:Notify({
+                Title = "Server Hop",
+                Content = "Mencoba metode alternatif...",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
         task.wait(1)
-        game:GetService("CoreGui"):FindFirstChild("RobloxGui"):FindFirstChild("MessageDialog"):FindFirstChild("Message"):FindFirstChild("Button"):Click()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end
 end
 
@@ -639,7 +668,7 @@ local function loadMainScript()
     
     createPlayerCounter()
 
-    local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
     local Window = Rayfield:CreateWindow({
         Name = "Drip Client Premium",
@@ -1149,9 +1178,9 @@ end
 
 -- ================== KEY SYSTEM RAYFIELD ==================
 local function startKeySystem()
-    local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    local TempRayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
-    local KeyWindow = Rayfield:CreateWindow({
+    local KeyWindow = TempRayfield:CreateWindow({
         Name = "Drip Client - Verifikasi",
         LoadingTitle = "Drip Client",
         LoadingSubtitle = "Masukkan Key Premium Anda",
@@ -1187,25 +1216,25 @@ local function startKeySystem()
 
             if inputKey == "" then
                 pcall(function() statusLabel:Set("❌ Key tidak boleh kosong!") end)
-                Rayfield:Notify({Title = "Error", Content = "Key tidak boleh kosong!", Duration = 3, Image = 4483362458})
+                TempRayfield:Notify({Title = "Error", Content = "Key tidak boleh kosong!", Duration = 3, Image = 4483362458})
                 return
             end
 
             pcall(function() statusLabel:Set("🔄 Sedang verifikasi ke database server...") end)
-            Rayfield:Notify({Title = "Verifikasi", Content = "Mengecek key ke server...", Duration = 2, Image = 4483362458})
+            TempRayfield:Notify({Title = "Verifikasi", Content = "Mengecek key ke server...", Duration = 2, Image = 4483362458})
 
             local isValid, message = checkKeyExpiry(inputKey)
 
             if isValid then
                 pcall(function() statusLabel:Set("✅ Key Valid! Memuat interface...") end)
-                Rayfield:Notify({Title = "Sukses!", Content = "Key valid! Interface sedang dimuat.", Duration = 3, Image = 4483362458})
+                TempRayfield:Notify({Title = "Sukses!", Content = "Key valid! Interface sedang dimuat.", Duration = 3, Image = 4483362458})
                 task.wait(1.5)
                 pcall(function() KeyWindow:Destroy() end)
                 task.wait(0.3)
                 loadMainScript()
             else
                 pcall(function() statusLabel:Set("❌ " .. message) end)
-                Rayfield:Notify({Title = "Gagal", Content = message, Duration = 4, Image = 4483362458})
+                TempRayfield:Notify({Title = "Gagal", Content = message, Duration = 4, Image = 4483362458})
             end
         end,
     })
@@ -1215,9 +1244,9 @@ local function startKeySystem()
         Callback = function()
             if setclipboard then
                 setclipboard(WEBSITE_URL)
-                Rayfield:Notify({Title = "Link Disalin", Content = "Buka browser dan paste link untuk mendapatkan key.", Duration = 4, Image = 4483362458})
+                TempRayfield:Notify({Title = "Link Disalin", Content = "Buka browser dan paste link untuk mendapatkan key.", Duration = 4, Image = 4483362458})
             else
-                Rayfield:Notify({Title = "Link Key", Content = WEBSITE_URL, Duration = 6, Image = 4483362458})
+                TempRayfield:Notify({Title = "Link Key", Content = WEBSITE_URL, Duration = 6, Image = 4483362458})
             end
         end,
     })
