@@ -48,6 +48,7 @@ local keyExpiryTime = 0
 local keyJenis = ""
 local keyValidGlobal = false
 local infoKeyCountdownLabel = nil
+local mainWindowLoaded = false
 
 local function loadKeyData()
     if isfile and isfile(SAVE_FILE) then
@@ -398,8 +399,8 @@ end
 local function createESP(player)
     if player == LocalPlayer then return end
     local box = Drawing.new("Square") box.Thickness = 1.8 box.Filled = false box.Visible = false
-    local name = Drawing.new("Text") name.Size = 13 name.Center = true name.Outline = true name.Visible = false
-    local dist = Drawing.new("Text") dist.Size = 11 dist.Center = true dist.Outline = true dist.Visible = false
+    local name = Drawing.new("Text") name.Size = 13 name.Center = true name.Outline = true name.Visible = false name.Color = Color3.fromRGB(255,255,255)
+    local dist = Drawing.new("Text") dist.Size = 11 dist.Center = true dist.Outline = true dist.Visible = false dist.Color = Color3.fromRGB(255,255,255)
     local line = Drawing.new("Line") line.Thickness = 1.8 line.Visible = false
     local healthBg = Drawing.new("Square") healthBg.Filled = true healthBg.Visible = false
     local healthFg = Drawing.new("Square") healthFg.Filled = true healthFg.Visible = false
@@ -476,7 +477,7 @@ RunService.RenderStepped:Connect(function()
             end
 
             if lineEnabled and visible then
-                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                line.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
                 line.To = Vector2.new(pos.X, pos.Y)
                 line.Color = lineColor
                 line.Visible = true
@@ -518,23 +519,11 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ================== COUNTDOWN KEY TIMER ==================
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if keyValidGlobal and keyExpiryTime > 0 and infoKeyCountdownLabel then
-            local _, _, _, _, timeStr = getTimeRemaining(keyExpiryTime)
-            if os.time() > keyExpiryTime then
-                infoKeyCountdownLabel.Text = "Status Key: EXPIRED!"
-            else
-                infoKeyCountdownLabel.Text = "Sisa Durasi: " .. timeStr
-            end
-        end
-    end
-end)
-
 -- ================== MAIN RAYFIELD UI ==================
 local function loadMainScript()
+    if mainWindowLoaded then return end
+    mainWindowLoaded = true
+    
     createPlayerCounter()
 
     local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -814,19 +803,168 @@ local function loadMainScript()
         if flyEnabled then startFlyMode() end
     end)
 
+    TabUtil:CreateDivider()
+    TabUtil:CreateSection("Spectator Player")
+
+    -- ================== SPECTATOR SYSTEM ==================
+    local spectateEnabled  = false
+    local spectateTarget   = nil
+    local spectateConn     = nil
+    local originalCamType  = Enum.CameraType.Custom
+    local spectateNames    = {}
+
+    local function stopSpectate()
+        spectateEnabled = false
+        spectateTarget  = nil
+        if spectateConn then spectateConn:Disconnect(); spectateConn = nil end
+        -- Kembalikan camera ke normal
+        pcall(function()
+            Camera.CameraType = Enum.CameraType.Custom
+            Camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") or nil
+        end)
+    end
+
+    local function startSpectate(targetPlayer)
+        if not targetPlayer or not targetPlayer.Character then
+            Rayfield:Notify({Title="Spectator", Content="Karakter player tidak ditemukan!", Duration=2, Image=4483362458})
+            return
+        end
+        spectateTarget  = targetPlayer
+        spectateEnabled = true
+
+        -- Set camera ke karakter target
+        pcall(function()
+            originalCamType        = Camera.CameraType
+            Camera.CameraType      = Enum.CameraType.Custom
+            local targetHum        = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if targetHum then Camera.CameraSubject = targetHum end
+        end)
+
+        -- Loop ikuti target
+        if spectateConn then spectateConn:Disconnect() end
+        spectateConn = RunService.RenderStepped:Connect(function()
+            if not spectateEnabled or not spectateTarget then stopSpectate(); return end
+            local char = spectateTarget.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hrp and hum then
+                pcall(function()
+                    Camera.CameraType    = Enum.CameraType.Custom
+                    Camera.CameraSubject = hum
+                end)
+            end
+        end)
+
+        Rayfield:Notify({
+            Title   = "Spectator",
+            Content = "Sekarang menonton: " .. targetPlayer.Name,
+            Duration= 3,
+            Image   = 4483362458
+        })
+    end
+
+    -- Refresh daftar player untuk spectator
+    local function refreshSpectateList()
+        spectateNames = {}
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                table.insert(spectateNames, p.Name)
+            end
+        end
+        if #spectateNames == 0 then spectateNames = {"(Tidak ada player)"} end
+        return spectateNames
+    end
+    refreshSpectateList()
+
+    -- Dropdown pilih target spectator
+    TabUtil:CreateDropdown({
+        Name          = "Pilih Target Spectator",
+        Options       = spectateNames,
+        CurrentOption = {},
+        MultipleOptions = false,
+        Flag          = "SpectateTarget",
+        Callback      = function(selected)
+            local name = type(selected) == "table" and selected[1] or selected
+            local target = Players:FindFirstChild(name)
+            if spectateEnabled then
+                -- Ganti target kalau sedang spectate
+                if target and target.Character then
+                    spectateTarget = target
+                    local hum = target.Character:FindFirstChildOfClass("Humanoid")
+                    if hum then Camera.CameraSubject = hum end
+                    Rayfield:Notify({Title="Spectator", Content="Ganti target ke: "..name, Duration=2, Image=4483362458})
+                end
+            end
+        end,
+    })
+
+    TabUtil:CreateButton({
+        Name = "Refresh Daftar Spectator",
+        Callback = function()
+            refreshSpectateList()
+            Rayfield:Notify({Title="Refresh", Content="Daftar spectator diperbarui.", Duration=2, Image=4483362458})
+        end,
+    })
+
+    -- Toggle aktifkan spectator
+    TabUtil:CreateToggle({
+        Name         = "Aktifkan Spectator",
+        CurrentValue = false,
+        Flag         = "SpectateToggle",
+        Callback     = function(state)
+            if state then
+                -- Ambil pilihan dari dropdown
+                local sel = spectateNames[1]
+                local target = Players:FindFirstChild(sel)
+                if target and sel ~= "(Tidak ada player)" then
+                    startSpectate(target)
+                else
+                    Rayfield:Notify({Title="Spectator", Content="Pilih player dulu dari dropdown!", Duration=3, Image=4483362458})
+                end
+            else
+                stopSpectate()
+                Rayfield:Notify({Title="Spectator", Content="Spectator dinonaktifkan.", Duration=2, Image=4483362458})
+            end
+        end,
+    })
+
+    -- Auto stop spectate kalau player di-spectate leave
+    Players.PlayerRemoving:Connect(function(p)
+        if spectateTarget == p then
+            stopSpectate()
+            Rayfield:Notify({Title="Spectator", Content=p.Name.." keluar dari server!", Duration=3, Image=4483362458})
+        end
+    end)
+
     -- ================== TAB INFO ==================
     local TabInfo = Window:CreateTab("Info", "info")
 
     TabInfo:CreateSection("Informasi Lisensi")
 
     TabInfo:CreateLabel("Executor: " .. userExecutor)
-    TabInfo:CreateLabel("Paket: " .. keyJenis)
+    local keyPaketStr = keyJenis ~= "" and keyJenis or "Tidak diketahui"
+    TabInfo:CreateLabel("Paket: " .. keyPaketStr)
 
     -- Label countdown
-    local countdownElement = TabInfo:CreateLabel("Menghubungkan sisa durasi server...")
-    
-    -- Update infoKeyCountdownLabel untuk countdown timer
+    local countdownElement = TabInfo:CreateLabel("Memuat waktu...")
     infoKeyCountdownLabel = countdownElement
+
+    -- Update countdown setiap detik
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            if keyValidGlobal and keyExpiryTime > 0 then
+                local _, _, _, _, timeStr = getTimeRemaining(keyExpiryTime)
+                local txt = os.time() > keyExpiryTime and "⛔ Key EXPIRED!" or ("⏳ Sisa: " .. timeStr)
+                pcall(function()
+                    if countdownElement and countdownElement.Set then
+                        countdownElement:Set(txt)
+                    end
+                end)
+            end
+        end
+    end)
 
     TabInfo:CreateDivider()
     TabInfo:CreateSection("Developer")
@@ -847,79 +985,81 @@ local function loadMainScript()
 end
 
 -- ================== KEY SYSTEM RAYFIELD ==================
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+local function startKeySystem()
+    local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
-local KeyWindow = Rayfield:CreateWindow({
-    Name = "Drip Client - Verifikasi",
-    LoadingTitle = "Drip Client",
-    LoadingSubtitle = "Masukkan Key Premium Anda",
-    Theme = "Amethyst",
-    DisableRayfieldPrompts = true,
-    DisableBuildWarnings = true,
-    ConfigurationSaving = { Enabled = false },
-    KeySystem = false,
-})
+    local KeyWindow = Rayfield:CreateWindow({
+        Name = "Drip Client - Verifikasi",
+        LoadingTitle = "Drip Client",
+        LoadingSubtitle = "Masukkan Key Premium Anda",
+        Theme = "Amethyst",
+        DisableRayfieldPrompts = true,
+        DisableBuildWarnings = true,
+        ConfigurationSaving = { Enabled = false },
+        KeySystem = false,
+    })
 
-local KeyTab = KeyWindow:CreateTab("Key System", "key-round")
-KeyTab:CreateSection("Autentikasi Key Server")
+    local KeyTab = KeyWindow:CreateTab("Key System", "key-round")
+    KeyTab:CreateSection("Autentikasi Key Server")
 
-local statusLabel = KeyTab:CreateLabel("Menunggu verifikasi lisensi...")
+    local statusLabel = KeyTab:CreateLabel("Menunggu verifikasi lisensi...")
 
--- Variabel untuk menyimpan input key
-local inputKeyValue = ""
+    -- Variabel untuk menyimpan input key
+    local inputKeyValue = ""
 
-KeyTab:CreateInput({
-    Name = "Masukkan Key Premium",
-    PlaceholderText = "Input key server di sini...",
-    RemoveTextAfterFocusLost = false,
-    Flag = "KeyInput",
-    Callback = function(text)
-        inputKeyValue = text  -- Simpan setiap kali user mengetik
-    end,
-})
+    KeyTab:CreateInput({
+        Name = "Masukkan Key Premium",
+        PlaceholderText = "Input key server di sini...",
+        RemoveTextAfterFocusLost = false,
+        Flag = "KeyInput",
+        Callback = function(text)
+            inputKeyValue = text
+        end,
+    })
 
-KeyTab:CreateButton({
-    Name = "AUTENTIKASI KEY",
-    Callback = function()
-        local inputKey = inputKeyValue  -- Ambil dari variabel
-        inputKey = tostring(inputKey):gsub("%s+", "")
+    KeyTab:CreateButton({
+        Name = "AUTENTIKASI KEY",
+        Callback = function()
+            local inputKey = inputKeyValue
+            inputKey = tostring(inputKey):gsub("%s+", "")
 
-        if inputKey == "" then
-            pcall(function() statusLabel:Set("❌ Key tidak boleh kosong!") end)
-            Rayfield:Notify({Title = "Error", Content = "Key tidak boleh kosong!", Duration = 3, Image = 4483362458})
-            return
-        end
+            if inputKey == "" then
+                pcall(function() statusLabel:Set("❌ Key tidak boleh kosong!") end)
+                Rayfield:Notify({Title = "Error", Content = "Key tidak boleh kosong!", Duration = 3, Image = 4483362458})
+                return
+            end
 
-        pcall(function() statusLabel:Set("🔄 Sedang verifikasi ke database server...") end)
-        Rayfield:Notify({Title = "Verifikasi", Content = "Mengecek key ke server...", Duration = 2, Image = 4483362458})
+            pcall(function() statusLabel:Set("🔄 Sedang verifikasi ke database server...") end)
+            Rayfield:Notify({Title = "Verifikasi", Content = "Mengecek key ke server...", Duration = 2, Image = 4483362458})
 
-        local isValid, message = checkKeyExpiry(inputKey)
+            local isValid, message = checkKeyExpiry(inputKey)
 
-        if isValid then
-            pcall(function() statusLabel:Set("✅ Key Valid! Memuat interface...") end)
-            Rayfield:Notify({Title = "Sukses!", Content = "Key valid! Interface sedang dimuat.", Duration = 3, Image = 4483362458})
-            task.wait(1.5)
-            pcall(function() KeyWindow:Destroy() end)
-            task.wait(0.3)
-            loadMainScript()
-        else
-            pcall(function() statusLabel:Set("❌ " .. message) end)
-            Rayfield:Notify({Title = "Gagal", Content = message, Duration = 4, Image = 4483362458})
-        end
-    end,
-})
+            if isValid then
+                pcall(function() statusLabel:Set("✅ Key Valid! Memuat interface...") end)
+                Rayfield:Notify({Title = "Sukses!", Content = "Key valid! Interface sedang dimuat.", Duration = 3, Image = 4483362458})
+                task.wait(1.5)
+                pcall(function() KeyWindow:Destroy() end)
+                task.wait(0.3)
+                loadMainScript()
+            else
+                pcall(function() statusLabel:Set("❌ " .. message) end)
+                Rayfield:Notify({Title = "Gagal", Content = message, Duration = 4, Image = 4483362458})
+            end
+        end,
+    })
 
-KeyTab:CreateButton({
-    Name = "Ambil Key (Salin Link)",
-    Callback = function()
-        if setclipboard then
-            setclipboard(WEBSITE_URL)
-            Rayfield:Notify({Title = "Link Disalin", Content = "Buka browser dan paste link untuk mendapatkan key.", Duration = 4, Image = 4483362458})
-        else
-            Rayfield:Notify({Title = "Link Key", Content = WEBSITE_URL, Duration = 6, Image = 4483362458})
-        end
-    end,
-})
+    KeyTab:CreateButton({
+        Name = "Ambil Key (Salin Link)",
+        Callback = function()
+            if setclipboard then
+                setclipboard(WEBSITE_URL)
+                Rayfield:Notify({Title = "Link Disalin", Content = "Buka browser dan paste link untuk mendapatkan key.", Duration = 4, Image = 4483362458})
+            else
+                Rayfield:Notify({Title = "Link Key", Content = WEBSITE_URL, Duration = 6, Image = 4483362458})
+            end
+        end,
+    })
+end
 
 -- ================== ESP PLAYER INIT ==================
 for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
@@ -928,3 +1068,7 @@ Players.PlayerRemoving:Connect(function(p)
     if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
     if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
 end)
+
+-- ================== START ==================
+-- Jalankan key system
+startKeySystem()
