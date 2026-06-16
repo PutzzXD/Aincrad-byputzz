@@ -8,6 +8,8 @@ local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
 
 -- ================== DETEKSI NAMA EXECUTOR ==================
 local function detectExecutor()
@@ -186,6 +188,25 @@ local skeletonColor = Color3.fromRGB(0, 255, 0)
 local boxColor = Color3.fromRGB(0, 0, 0)
 local MAX_ESP_DISTANCE = 200000
 
+-- ================== FITUR BARU ==================
+-- Full Bright
+local fullBrightEnabled = false
+local originalBrightness = Lighting.Brightness
+local originalClockTime = Lighting.ClockTime
+local originalAmbient = Lighting.Ambient
+local originalColorShift_Bottom = Lighting.ColorShift_Bottom
+local originalColorShift_Top = Lighting.ColorShift_Top
+local originalOutdoorAmbient = Lighting.OutdoorAmbient
+
+-- No Fog
+local noFogEnabled = false
+local originalFogEnd = Lighting.FogEnd
+local originalFogStart = Lighting.FogStart
+local originalFogColor = Lighting.FogColor
+
+-- Server Hop
+local serverHopConnections = {}
+
 -- ================== ENGINE ACTIONS ==================
 local function startFlyMode()
     local plr = LocalPlayer
@@ -307,6 +328,98 @@ local function toggleInvisible(state)
         invisibleParts = {}
         invisibleRootPart = nil
         invisibleHumanoid = nil
+    end
+end
+
+-- ================== FULL BRIGHT ==================
+local function toggleFullBright(state)
+    fullBrightEnabled = state
+    if state then
+        -- Simpan nilai asli
+        originalBrightness = Lighting.Brightness
+        originalClockTime = Lighting.ClockTime
+        originalAmbient = Lighting.Ambient
+        originalColorShift_Bottom = Lighting.ColorShift_Bottom
+        originalColorShift_Top = Lighting.ColorShift_Top
+        originalOutdoorAmbient = Lighting.OutdoorAmbient
+        
+        -- Set ke full bright
+        Lighting.Brightness = 10
+        Lighting.ClockTime = 14
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.ColorShift_Bottom = Color3.fromRGB(255, 255, 255)
+        Lighting.ColorShift_Top = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 100000
+    else
+        -- Kembalikan nilai asli
+        Lighting.Brightness = originalBrightness
+        Lighting.ClockTime = originalClockTime
+        Lighting.Ambient = originalAmbient
+        Lighting.ColorShift_Bottom = originalColorShift_Bottom
+        Lighting.ColorShift_Top = originalColorShift_Top
+        Lighting.OutdoorAmbient = originalOutdoorAmbient
+        Lighting.GlobalShadows = true
+        Lighting.FogEnd = originalFogEnd or 1000
+    end
+end
+
+-- ================== NO FOG ==================
+local function toggleNoFog(state)
+    noFogEnabled = state
+    if state then
+        originalFogEnd = Lighting.FogEnd
+        originalFogStart = Lighting.FogStart
+        originalFogColor = Lighting.FogColor
+        
+        Lighting.FogEnd = 100000
+        Lighting.FogStart = 100000
+        Lighting.FogColor = Color3.fromRGB(0, 0, 0)
+    else
+        Lighting.FogEnd = originalFogEnd or 1000
+        Lighting.FogStart = originalFogStart or 0
+        Lighting.FogColor = originalFogColor or Color3.fromRGB(127, 127, 127)
+    end
+end
+
+-- ================== REJOIN SERVER ==================
+local function rejoinServer()
+    Rayfield:Notify({
+        Title = "Rejoin",
+        Content = "Sedang merejoin server...",
+        Duration = 3,
+        Image = 4483362458
+    })
+    task.wait(1)
+    TeleportService:Teleport(game.PlaceId, LocalPlayer)
+end
+
+-- ================== SERVER HOP ==================
+local function serverHop()
+    Rayfield:Notify({
+        Title = "Server Hop",
+        Content = "Mencari server baru...",
+        Duration = 3,
+        Image = 4483362458
+    })
+    task.wait(1)
+    
+    -- Coba dapatkan server baru via TeleportService
+    local success, err = pcall(function()
+        TeleportService:Teleport(game.PlaceId)
+    end)
+    
+    if not success then
+        -- Fallback: reload game
+        Rayfield:Notify({
+            Title = "Server Hop",
+            Content = "Mencoba metode alternatif...",
+            Duration = 3,
+            Image = 4483362458
+        })
+        task.wait(1)
+        game:GetService("CoreGui"):FindFirstChild("RobloxGui"):FindFirstChild("MessageDialog"):FindFirstChild("Message"):FindFirstChild("Button"):Click()
     end
 end
 
@@ -817,7 +930,6 @@ local function loadMainScript()
         spectateEnabled = false
         spectateTarget  = nil
         if spectateConn then spectateConn:Disconnect(); spectateConn = nil end
-        -- Kembalikan camera ke normal
         pcall(function()
             Camera.CameraType = Enum.CameraType.Custom
             Camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") or nil
@@ -832,7 +944,6 @@ local function loadMainScript()
         spectateTarget  = targetPlayer
         spectateEnabled = true
 
-        -- Set camera ke karakter target
         pcall(function()
             originalCamType        = Camera.CameraType
             Camera.CameraType      = Enum.CameraType.Custom
@@ -840,7 +951,6 @@ local function loadMainScript()
             if targetHum then Camera.CameraSubject = targetHum end
         end)
 
-        -- Loop ikuti target
         if spectateConn then spectateConn:Disconnect() end
         spectateConn = RunService.RenderStepped:Connect(function()
             if not spectateEnabled or not spectateTarget then stopSpectate(); return end
@@ -864,7 +974,6 @@ local function loadMainScript()
         })
     end
 
-    -- Refresh daftar player untuk spectator
     local function refreshSpectateList()
         spectateNames = {}
         for _, p in pairs(Players:GetPlayers()) do
@@ -877,7 +986,6 @@ local function loadMainScript()
     end
     refreshSpectateList()
 
-    -- Dropdown pilih target spectator
     TabUtil:CreateDropdown({
         Name          = "Pilih Target Spectator",
         Options       = spectateNames,
@@ -888,7 +996,6 @@ local function loadMainScript()
             local name = type(selected) == "table" and selected[1] or selected
             local target = Players:FindFirstChild(name)
             if spectateEnabled then
-                -- Ganti target kalau sedang spectate
                 if target and target.Character then
                     spectateTarget = target
                     local hum = target.Character:FindFirstChildOfClass("Humanoid")
@@ -907,14 +1014,12 @@ local function loadMainScript()
         end,
     })
 
-    -- Toggle aktifkan spectator
     TabUtil:CreateToggle({
         Name         = "Aktifkan Spectator",
         CurrentValue = false,
         Flag         = "SpectateToggle",
         Callback     = function(state)
             if state then
-                -- Ambil pilihan dari dropdown
                 local sel = spectateNames[1]
                 local target = Players:FindFirstChild(sel)
                 if target and sel ~= "(Tidak ada player)" then
@@ -929,13 +1034,73 @@ local function loadMainScript()
         end,
     })
 
-    -- Auto stop spectate kalau player di-spectate leave
     Players.PlayerRemoving:Connect(function(p)
         if spectateTarget == p then
             stopSpectate()
             Rayfield:Notify({Title="Spectator", Content=p.Name.." keluar dari server!", Duration=3, Image=4483362458})
         end
     end)
+
+    -- ================== TAB SETTINGS (FITUR BARU) ==================
+    local TabSettings = Window:CreateTab("Settings", "settings")
+
+    TabSettings:CreateSection("🔆 Full Bright")
+
+    TabSettings:CreateToggle({
+        Name = "Full Bright",
+        CurrentValue = false,
+        Flag = "FullBright",
+        Callback = function(state)
+            toggleFullBright(state)
+            Rayfield:Notify({
+                Title = "Full Bright",
+                Content = state and "Full Bright diaktifkan" or "Full Bright dinonaktifkan",
+                Duration = 2,
+                Image = 4483362458
+            })
+        end,
+    })
+
+    TabSettings:CreateDivider()
+    TabSettings:CreateSection("🌫️ No Fog")
+
+    TabSettings:CreateToggle({
+        Name = "No Fog",
+        CurrentValue = false,
+        Flag = "NoFog",
+        Callback = function(state)
+            toggleNoFog(state)
+            Rayfield:Notify({
+                Title = "No Fog",
+                Content = state and "No Fog diaktifkan" or "No Fog dinonaktifkan",
+                Duration = 2,
+                Image = 4483362458
+            })
+        end,
+    })
+
+    TabSettings:CreateDivider()
+    TabSettings:CreateSection("🔄 Server Control")
+
+    TabSettings:CreateButton({
+        Name = "🔄 Rejoin Server",
+        Callback = function()
+            rejoinServer()
+        end,
+    })
+
+    TabSettings:CreateButton({
+        Name = "🚀 Server Hop",
+        Callback = function()
+            serverHop()
+        end,
+    })
+
+    TabSettings:CreateDivider()
+    TabSettings:CreateSection("⚠️ Informasi")
+
+    TabSettings:CreateLabel("Full Bright & No Fog akan otomatis reset saat matikan toggle.")
+    TabSettings:CreateLabel("Rejoin & Server Hop akan memindahkanmu ke server baru.")
 
     -- ================== TAB INFO ==================
     local TabInfo = Window:CreateTab("Info", "info")
@@ -946,11 +1111,9 @@ local function loadMainScript()
     local keyPaketStr = keyJenis ~= "" and keyJenis or "Tidak diketahui"
     TabInfo:CreateLabel("Paket: " .. keyPaketStr)
 
-    -- Label countdown
     local countdownElement = TabInfo:CreateLabel("Memuat waktu...")
     infoKeyCountdownLabel = countdownElement
 
-    -- Update countdown setiap detik
     task.spawn(function()
         while true do
             task.wait(1)
@@ -1004,7 +1167,6 @@ local function startKeySystem()
 
     local statusLabel = KeyTab:CreateLabel("Menunggu verifikasi lisensi...")
 
-    -- Variabel untuk menyimpan input key
     local inputKeyValue = ""
 
     KeyTab:CreateInput({
@@ -1070,5 +1232,4 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 -- ================== START ==================
--- Jalankan key system
 startKeySystem()
