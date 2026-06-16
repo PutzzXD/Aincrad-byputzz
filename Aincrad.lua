@@ -40,7 +40,7 @@ end
 local userExecutor = detectExecutor()
 
 -- ================== GLOBAL STATE & FILE SAVING SYSTEM ==================
-local FIREBASE_URL = "https://putzz-key-default-rtdb.europe-west1.firebasedatabase.app/"
+local FIREBASE_URL = "https://key-database-701af-default-rtdb.asia-southeast1.firebasedatabase.app/keys.json"
 local WEBSITE_URL = "https://drip-client-get-key.vercel.app/"
 local SAVE_FILE = "drip_key_data.txt"
 
