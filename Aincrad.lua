@@ -11,7 +11,7 @@ local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 
--- Pindahkan atau deklarasikan Rayfield secara global agar bisa diakses oleh semua fungsi
+-- Deklarasikan Rayfield secara global agar bisa diakses oleh semua fungsi
 local Rayfield = nil 
 
 -- ================== DETEKSI NAMA EXECUTOR ==================
@@ -174,7 +174,7 @@ local jumpPowerValue = 50
 local infinityJumpEnabled = false
 
 local antiDamageEnabled = false
-local antiDamageHeartbeat = nil
+local antiDamageConnection = nil
 
 local spinEnabled = false
 local spinSpeed = 50
@@ -191,8 +191,7 @@ local skeletonColor = Color3.fromRGB(0, 255, 0)
 local boxColor = Color3.fromRGB(0, 0, 0)
 local MAX_ESP_DISTANCE = 200000
 
--- ================== FITUR BARU ==================
--- Full Bright
+-- ================== FITUR BARU & BYPASS ==================
 local fullBrightEnabled = false
 local originalBrightness = Lighting.Brightness
 local originalClockTime = Lighting.ClockTime
@@ -201,14 +200,16 @@ local originalColorShift_Bottom = Lighting.ColorShift_Bottom
 local originalColorShift_Top = Lighting.ColorShift_Top
 local originalOutdoorAmbient = Lighting.OutdoorAmbient
 
--- No Fog
 local noFogEnabled = false
 local originalFogEnd = Lighting.FogEnd
 local originalFogStart = Lighting.FogStart
 local originalFogColor = Lighting.FogColor
 
--- Server Hop
 local serverHopConnections = {}
+
+-- Bypass States
+local antiCheatBypassEnabled = false
+local bypassHook = nil
 
 -- ================== ENGINE ACTIONS ==================
 local function startFlyMode()
@@ -338,7 +339,6 @@ end
 local function toggleFullBright(state)
     fullBrightEnabled = state
     if state then
-        -- Simpan nilai asli
         originalBrightness = Lighting.Brightness
         originalClockTime = Lighting.ClockTime
         originalAmbient = Lighting.Ambient
@@ -346,7 +346,6 @@ local function toggleFullBright(state)
         originalColorShift_Top = Lighting.ColorShift_Top
         originalOutdoorAmbient = Lighting.OutdoorAmbient
         
-        -- Set ke full bright
         Lighting.Brightness = 10
         Lighting.ClockTime = 14
         Lighting.Ambient = Color3.fromRGB(255, 255, 255)
@@ -356,7 +355,6 @@ local function toggleFullBright(state)
         Lighting.GlobalShadows = false
         Lighting.FogEnd = 100000
     else
-        -- Kembalikan nilai asli
         Lighting.Brightness = originalBrightness
         Lighting.ClockTime = originalClockTime
         Lighting.Ambient = originalAmbient
@@ -452,60 +450,62 @@ local function serverHop()
     end
 end
 
--- ================== GOD MODE ==================
-local function setupAntiDamage()
-    if antiDamageHeartbeat then
-        if type(antiDamageHeartbeat) == "table" and antiDamageHeartbeat._disconnect then
-            antiDamageHeartbeat:_disconnect()
-        elseif antiDamageHeartbeat.Disconnect then
-            antiDamageHeartbeat:Disconnect()
-        end
-        antiDamageHeartbeat = nil
-    end
-
-    local connections = {}
-
-    local function makeInvincible()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum then return end
-        hum.Health = hum.MaxHealth
-        hum.BreakJointsOnDeath = false
-        if hum._godHealthConn then hum._godHealthConn:Disconnect() hum._godHealthConn = nil end
-        local healthConn = hum.HealthChanged:Connect(function(newHealth)
-            if antiDamageEnabled and newHealth < hum.MaxHealth then hum.Health = hum.MaxHealth end
+-- ================== FIXED GOD MODE ==================
+local function toggleGodMode(state)
+    antiDamageEnabled = state
+    if antiDamageConnection then antiDamageConnection:Disconnect() antiDamageConnection = nil end
+    
+    if state then
+        antiDamageConnection = RunService.Heartbeat:Connect(function()
+            if antiDamageEnabled and LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if humanoid.Health > 0 and humanoid.Health < humanoid.MaxHealth then
+                        humanoid.Health = humanoid.MaxHealth
+                    end
+                end
+            end
         end)
-        hum._godHealthConn = healthConn
-        table.insert(connections, healthConn)
     end
+end
 
-    local hbConn = RunService.Heartbeat:Connect(function()
-        if antiDamageEnabled and LocalPlayer.Character then
-            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
-        end
-    end)
-    table.insert(connections, hbConn)
-    makeInvincible()
-
-    local charConn = LocalPlayer.CharacterAdded:Connect(function()
-        task.wait(0.2)
-        if antiDamageEnabled then makeInvincible() end
-    end)
-    table.insert(connections, charConn)
-
-    local godModeObject = {}
-    function godModeObject:Disconnect()
-        for _, conn in ipairs(connections) do pcall(function() conn:Disconnect() end) end
-        connections = {}
-        if LocalPlayer.Character then
-            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum._godHealthConn then hum._godHealthConn:Disconnect() hum._godHealthConn = nil end
-        end
+-- ================== UNIVERSAL ANTI-CHEAT BYPASS ==================
+local function toggleAntiCheatBypass(state)
+    antiCheatBypassEnabled = state
+    if state then
+        -- Hooking internal index meta-method (Aman dari deteksi WalkSpeed/JumpPower lokal)
+        local rawmeta = getrawmetatable(game)
+        if setreadonly then setreadonly(rawmeta, false) end
+        local oldIndex = rawmeta.__index
+        
+        rawmeta.__index = newcclosure(function(self, key)
+            if antiCheatBypassEnabled and not checkcaller() then
+                -- Manipulasi pembacaan properti WalkSpeed & JumpPower dari deteksi script game lokal
+                if self:IsA("Humanoid") then
+                    if key == "WalkSpeed" then return 16 end
+                    if key == "JumpPower" then return 50 end
+                end
+            end
+            return oldIndex(self, key)
+        end)
+        
+        if setreadonly then setreadonly(rawmeta, true) end
+        
+        -- Mengelabui sistem deteksi pergerakan ekstrem (Anti-Lagback/Fly Bypass)
+        task.spawn(function()
+            while antiCheatBypassEnabled do
+                task.wait(0.1)
+                pcall(function()
+                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        -- Memberikan sedikit Velocity konstan agar server mengira pergerakan jatuh/berjalan adalah legal
+                        if flyEnabled or speedEnabled then
+                            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 0.05, 0)
+                        end
+                    end
+                end)
+            end
+        end)
     end
-    function godModeObject:_disconnect() self:Disconnect() end
-    antiDamageHeartbeat = godModeObject
 end
 
 UserInputService.JumpRequest:Connect(function()
@@ -768,17 +768,11 @@ local function loadMainScript()
     })
 
     TabMain:CreateToggle({
-        Name = "God Mode",
+        Name = "God Mode (Anti Damage)",
         CurrentValue = false,
         Flag = "GodMode",
         Callback = function(state)
-            antiDamageEnabled = state
-            if state then
-                setupAntiDamage()
-            else
-                if antiDamageHeartbeat then antiDamageHeartbeat:Disconnect() end
-                antiDamageHeartbeat = nil
-            end
+            toggleGodMode(state)
         end,
     })
 
@@ -856,7 +850,6 @@ local function loadMainScript()
     -- ================== TAB UTILITY ==================
     local TabUtil = Window:CreateTab("Utility", "settings")
 
-    -- Teleport ke Player
     local playerNames = {}
     local function refreshPlayers()
         playerNames = {}
@@ -898,7 +891,6 @@ local function loadMainScript()
 
     TabUtil:CreateDivider()
 
-    -- Freeze All
     local freezeAllEnabled = false
     TabUtil:CreateToggle({
         Name = "Freeze All Player (Visual)",
@@ -918,7 +910,6 @@ local function loadMainScript()
         end,
     })
 
-    -- Freeze Diri
     local freezeSelfEnabled = false
     TabUtil:CreateToggle({
         Name = "Freeze Diri Sendiri",
@@ -948,7 +939,7 @@ local function loadMainScript()
     TabUtil:CreateDivider()
     TabUtil:CreateSection("Spectator Player")
 
-    -- ================== SPECTATOR SYSTEM ==================
+    -- Spectator System
     local spectateEnabled  = false
     local spectateTarget   = nil
     local spectateConn     = nil
@@ -1070,9 +1061,28 @@ local function loadMainScript()
         end
     end)
 
-    -- ================== TAB SETTINGS (FITUR BARU) ==================
+    -- ================== TAB SETTINGS ==================
     local TabSettings = Window:CreateTab("Settings", "settings")
 
+    -- SEKSI BARU: BYPASS SYSTEM
+    TabSettings:CreateSection("🛡️ Anti-Cheat Bypass")
+
+    TabSettings:CreateToggle({
+        Name = "Universal Anti-Cheat Bypass",
+        CurrentValue = false,
+        Flag = "AC_Bypass",
+        Callback = function(state)
+            toggleAntiCheatBypass(state)
+            Rayfield:Notify({
+                Title = "Bypass System",
+                Content = state and "Universal Bypass DI-AKTIFKAN!" or "Bypass dinonaktifkan.",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end,
+    })
+
+    TabSettings:CreateDivider()
     TabSettings:CreateSection("🔆 Full Bright")
 
     TabSettings:CreateToggle({
@@ -1128,8 +1138,8 @@ local function loadMainScript()
     TabSettings:CreateDivider()
     TabSettings:CreateSection("⚠️ Informasi")
 
-    TabSettings:CreateLabel("Full Bright & No Fog akan otomatis reset saat matikan toggle.")
-    TabSettings:CreateLabel("Rejoin & Server Hop akan memindahkanmu ke server baru.")
+    TabSettings:CreateLabel("Bypass direkomendasikan diaktifkan")
+    TabSettings:CreateLabel("")
 
     -- ================== TAB INFO ==================
     local TabInfo = Window:CreateTab("Info", "info")
@@ -1183,7 +1193,7 @@ local function startKeySystem()
     local KeyWindow = TempRayfield:CreateWindow({
         Name = "Drip Client - Verifikasi",
         LoadingTitle = "Drip Client",
-        LoadingSubtitle = "Masukkan Key Premium Anda",
+        LoadingSubtitle = "Masukkan Key Anda",
         Theme = "Amethyst",
         DisableRayfieldPrompts = true,
         DisableBuildWarnings = true,
