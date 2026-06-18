@@ -150,18 +150,25 @@ local lineColor = Color3.fromRGB(0, 0, 0)
 local skeletonEnabled = false
 local ESPTable = {}
 local SkeletonESP = {}
-local highlightConnections = {}
+
+-- ================== HOLOGRAM CHAMS ==================
+local chamsEnabled = false
+local chamsColor = Color3.fromRGB(0, 255, 0) -- Hijau
+local chamsTransparency = 0.3
+local chamsMaterial = Enum.Material.Neon
+local chamsParts = {}
+local chamsConnections = {}
 
 local playerCounterEnabled = false
 local enemyCountText = nil
 
-local flyEnabled = false
-local flyConnection = nil
-local flySpeed = 100
-local flyAutoForward = true
-local ctrl = {f = 0, b = 0, l = 0, r = 0}
-local speed = 0
-local flyTorso = nil
+-- ================== WALL CLIMB ==================
+local wallClimbEnabled = false
+local wallClimbSpeed = 20
+local wallClimbConnection = nil
+local wallClimbBV = nil
+local originalGravity = workspace.Gravity
+local isOnWall = false
 
 local noclipEnabled = false
 local noclipConnection = nil
@@ -192,12 +199,6 @@ local skeletonColor = Color3.fromRGB(0, 255, 0)
 local boxColor = Color3.fromRGB(0, 0, 0)
 local MAX_ESP_DISTANCE = 200000
 
--- ================== ESP HIGHLIGHT FULL BADAN ==================
-local highlightEnabled = false
-local highlightColor = Color3.fromRGB(0, 255, 0) -- Hijau
-local highlightTransparency = 0.5
-local highlightPlayers = {}
-
 -- ================== FITUR BARU & BYPASS ==================
 local fullBrightEnabled = false
 local originalBrightness = Lighting.Brightness
@@ -219,58 +220,6 @@ local antiCheatBypassEnabled = false
 local bypassHook = nil
 
 -- ================== ENGINE ACTIONS ==================
-local function startFlyMode()
-    local plr = LocalPlayer
-    if not plr.Character then return end
-    flyTorso = plr.Character:FindFirstChild("UpperTorso") or plr.Character:FindFirstChild("Torso") or plr.Character:FindFirstChild("HumanoidRootPart")
-    if not flyTorso then return end
-    ctrl = {f = 0, b = 0, l = 0, r = 0}
-    speed = 0
-    if plr.Character:FindFirstChildOfClass("Humanoid") then plr.Character:FindFirstChildOfClass("Humanoid").PlatformStand = true end
-
-    local flyBodyGyro = Instance.new("BodyGyro", flyTorso)
-    flyBodyGyro.Name = "FlyBG"
-    flyBodyGyro.P = 9e4
-    flyBodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-
-    local flyBodyVelocity = Instance.new("BodyVelocity", flyTorso)
-    flyBodyVelocity.Name = "FlyBV"
-    flyBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-
-    flyConnection = RunService.RenderStepped:Connect(function()
-        if not flyEnabled or not plr.Character or not flyTorso:IsDescendantOf(workspace) then return end
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then ctrl.f = 1 else ctrl.f = 0 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then ctrl.b = -1 else ctrl.b = 0 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then ctrl.l = -1 else ctrl.l = 0 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then ctrl.r = 1 else ctrl.r = 0 end
-
-        local forwardInput = (flyAutoForward and ctrl.f == 0 and ctrl.b == 0) and 1 or (ctrl.f + ctrl.b)
-        if forwardInput ~= 0 or ctrl.l + ctrl.r ~= 0 then
-            speed = math.min(speed + 1.5, flySpeed)
-            local camCF = Camera.CFrame
-            flyBodyVelocity.Velocity = ((camCF.LookVector * forwardInput) + (camCF.RightVector * (ctrl.l + ctrl.r))).Unit * speed
-        else
-            speed = math.max(speed - 2, 0)
-            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
-        end
-        flyBodyGyro.CFrame = Camera.CFrame
-    end)
-end
-
-local function stopFlyMode()
-    flyEnabled = false
-    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-    local char = LocalPlayer.Character
-    if char then
-        if char:FindFirstChildOfClass("Humanoid") then char:FindFirstChildOfClass("Humanoid").PlatformStand = false end
-        local t = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
-        if t then
-            if t:FindFirstChild("FlyBV") then t.FlyBV:Destroy() end
-            if t:FindFirstChild("FlyBG") then t.FlyBG:Destroy() end
-        end
-    end
-end
-
 local function startNoclip()
     if noclipConnection then noclipConnection:Disconnect() end
     noclipConnection = RunService.Stepped:Connect(function()
@@ -284,6 +233,87 @@ end
 
 local function stopNoclip()
     if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+end
+
+-- ================== WALL CLIMB ==================
+local function startWallClimb()
+    if wallClimbConnection then wallClimbConnection:Disconnect() end
+    
+    wallClimbConnection = RunService.Heartbeat:Connect(function()
+        if not wallClimbEnabled then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
+        
+        -- Cek apakah player sedang menekan W (maju)
+        local moveForward = UserInputService:IsKeyDown(Enum.KeyCode.W)
+        local moveUp = UserInputService:IsKeyDown(Enum.KeyCode.Space)
+        
+        -- Raycast ke depan untuk deteksi tembok
+        local origin = hrp.Position
+        local direction = hrp.CFrame.LookVector
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {char}
+        raycastParams.IgnoreWater = true
+        
+        local rayResult = workspace:Raycast(origin, direction * 3, raycastParams)
+        
+        -- Cek apakah ada tembok di depan
+        local wallFound = rayResult and rayResult.Instance and rayResult.Instance.CanCollide
+        
+        if wallFound and (moveForward or moveUp) then
+            -- Matikan gravity sementara
+            workspace.Gravity = 0
+            
+            -- Buat BodyVelocity untuk naik
+            if wallClimbBV then wallClimbBV:Destroy() end
+            wallClimbBV = Instance.new("BodyVelocity")
+            wallClimbBV.Velocity = Vector3.new(0, wallClimbSpeed, 0)
+            wallClimbBV.MaxForce = Vector3.new(0, 9e9, 0)
+            wallClimbBV.Parent = hrp
+            
+            isOnWall = true
+            
+        elseif wallFound and not moveForward and not moveUp then
+            -- Nempel di tembok tanpa naik (Wall Grab)
+            workspace.Gravity = 0
+            if wallClimbBV then wallClimbBV:Destroy() end
+            wallClimbBV = Instance.new("BodyVelocity")
+            wallClimbBV.Velocity = Vector3.new(0, 0, 0)
+            wallClimbBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            wallClimbBV.Parent = hrp
+            isOnWall = true
+            
+        else
+            -- Kembalikan gravity normal
+            workspace.Gravity = originalGravity
+            if wallClimbBV then wallClimbBV:Destroy() end
+            wallClimbBV = nil
+            isOnWall = false
+        end
+    end)
+end
+
+local function stopWallClimb()
+    wallClimbEnabled = false
+    if wallClimbConnection then wallClimbConnection:Disconnect() wallClimbConnection = nil end
+    if wallClimbBV then wallClimbBV:Destroy() wallClimbBV = nil end
+    workspace.Gravity = originalGravity
+    isOnWall = false
+end
+
+local function toggleWallClimb(state)
+    wallClimbEnabled = state
+    if state then
+        startWallClimb()
+    else
+        stopWallClimb()
+    end
 end
 
 local function toggleSpin(state)
@@ -342,89 +372,36 @@ local function toggleInvisible(state)
     end
 end
 
--- ================== ESP HIGHLIGHT FULL BADAN ==================
-local function toggleHighlight(state)
-    highlightEnabled = state
-    
-    if state then
-        -- Beri highlight ke semua player yang sudah ada
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                applyHighlightToPlayer(player)
-            end
-        end
-    else
-        -- Hapus semua highlight
-        for _, player in pairs(Players:GetPlayers()) do
-            removeHighlightFromPlayer(player)
-        end
-        -- Hapus semua connection
-        for _, conn in pairs(highlightConnections) do
-            pcall(function() conn:Disconnect() end)
-        end
-        highlightConnections = {}
-    end
-end
-
-local function applyHighlightToPlayer(player)
+-- ================== HOLOGRAM CHAMS ==================
+local function applyChams(player)
     if player == LocalPlayer then return end
     
-    -- Hapus highlight lama
-    removeHighlightFromPlayer(player)
-    
-    -- Buat connection untuk memonitor karakter player
-    local conn
-    conn = player.CharacterAdded:Connect(function(char)
-        task.wait(0.5) -- Tunggu karakter siap
-        if highlightEnabled and char then
-            highlightPlayerParts(char)
-        end
-    end)
-    table.insert(highlightConnections, conn)
-    
-    -- Highlight karakter saat ini jika ada
-    if player.Character then
-        task.wait(0.3)
-        highlightPlayerParts(player.Character)
-    end
-end
-
-local function highlightPlayerParts(char)
+    local char = player.Character
     if not char then return end
     
-    -- Cari semua BasePart di karakter
-    local parts = {}
     for _, part in pairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
-            table.insert(parts, part)
+            pcall(function()
+                if not chamsParts[part] then
+                    chamsParts[part] = {
+                        origColor = part.Color,
+                        origTransparency = part.Transparency,
+                        origMaterial = part.Material
+                    }
+                end
+                
+                part.Color = chamsColor
+                part.Transparency = chamsTransparency
+                part.Material = chamsMaterial
+            end)
         end
-    end
-    
-    -- Highlight semua part dengan warna hijau dan transparan
-    for _, part in pairs(parts) do
-        pcall(function()
-            -- Simpan warna asli jika belum disimpan
-            if not highlightPlayers[part] then
-                highlightPlayers[part] = {
-                    origColor = part.Color,
-                    origTransparency = part.Transparency,
-                    origMaterial = part.Material
-                }
-            end
-            
-            -- Set highlight
-            part.Color = highlightColor
-            part.Transparency = highlightTransparency
-            part.Material = Enum.Material.SmoothPlastic
-        end)
     end
 end
 
-local function removeHighlightFromPlayer(player)
+local function removeChams(player)
     if not player then return end
     
-    -- Kembalikan semua part ke warna asli
-    for part, data in pairs(highlightPlayers) do
+    for part, data in pairs(chamsParts) do
         pcall(function()
             if part and part.Parent then
                 part.Color = data.origColor
@@ -432,25 +409,67 @@ local function removeHighlightFromPlayer(player)
                 part.Material = data.origMaterial
             end
         end)
-        highlightPlayers[part] = nil
+        chamsParts[part] = nil
     end
     
-    -- Bersihkan highlightPlayers yang sudah tidak valid
-    for part, _ in pairs(highlightPlayers) do
+    for part, _ in pairs(chamsParts) do
         if not part or not part.Parent then
-            highlightPlayers[part] = nil
+            chamsParts[part] = nil
         end
     end
 end
 
-local function cleanHighlightData()
-    -- Hapus data highlight yang sudah tidak valid
-    for part, _ in pairs(highlightPlayers) do
-        if not part or not part.Parent then
-            highlightPlayers[part] = nil
+local function toggleChams(state)
+    chamsEnabled = state
+    
+    if state then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                applyChams(player)
+            end
         end
+        
+        local conn = Players.PlayerAdded:Connect(function(player)
+            player.CharacterAdded:Connect(function(char)
+                task.wait(0.5)
+                if chamsEnabled and player ~= LocalPlayer then
+                    applyChams(player)
+                end
+            end)
+            if chamsEnabled and player ~= LocalPlayer then
+                task.wait(0.5)
+                applyChams(player)
+            end
+        end)
+        table.insert(chamsConnections, conn)
+        
+        local conn2 = Players.PlayerRemoving:Connect(function(player)
+            removeChams(player)
+        end)
+        table.insert(chamsConnections, conn2)
+        
+    else
+        for _, player in pairs(Players:GetPlayers()) do
+            removeChams(player)
+        end
+        
+        for _, conn in pairs(chamsConnections) do
+            pcall(function() conn:Disconnect() end)
+        end
+        chamsConnections = {}
     end
 end
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        for part, _ in pairs(chamsParts) do
+            if not part or not part.Parent then
+                chamsParts[part] = nil
+            end
+        end
+    end
+end)
 
 -- ================== FULL BRIGHT ==================
 local function toggleFullBright(state)
@@ -567,7 +586,7 @@ local function serverHop()
     end
 end
 
--- ================== FIXED GOD MODE ==================
+-- ================== GOD MODE ==================
 local function toggleGodMode(state)
     antiDamageEnabled = state
     if antiDamageConnection then antiDamageConnection:Disconnect() antiDamageConnection = nil end
@@ -611,7 +630,7 @@ local function toggleAntiCheatBypass(state)
                 task.wait(0.1)
                 pcall(function()
                     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        if flyEnabled or speedEnabled then
+                        if speedEnabled then
                             LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 0.05, 0)
                         end
                     end
@@ -774,14 +793,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Clean highlight data periodically
-task.spawn(function()
-    while true do
-        task.wait(5)
-        cleanHighlightData()
-    end
-end)
-
 -- ================== MAIN RAYFIELD UI ==================
 local function loadMainScript()
     if mainWindowLoaded then return end
@@ -808,33 +819,29 @@ local function loadMainScript()
     local TabMain = Window:CreateTab("Main", "zap")
 
     TabMain:CreateToggle({
-        Name = "Fly Mode",
+        Name = "Wall Climb",
         CurrentValue = false,
-        Flag = "FlyMode",
+        Flag = "WallClimb",
         Callback = function(state)
-            flyEnabled = state
-            if state then startFlyMode() else stopFlyMode() end
+            toggleWallClimb(state)
+            Rayfield:Notify({
+                Title = "Wall Climb",
+                Content = state and "Wall Climb DI-AKTIFKAN!" or "Wall Climb Dinonaktifkan",
+                Duration = 2,
+                Image = 4483362458
+            })
         end,
     })
 
     TabMain:CreateSlider({
-        Name = "Fly Speed",
-        Range = {10, 500},
-        Increment = 10,
+        Name = "Climb Speed",
+        Range = {5, 50},
+        Increment = 1,
         Suffix = "",
-        CurrentValue = flySpeed,
-        Flag = "FlySpeed",
+        CurrentValue = wallClimbSpeed,
+        Flag = "ClimbSpeed",
         Callback = function(val)
-            flySpeed = val
-        end,
-    })
-
-    TabMain:CreateToggle({
-        Name = "Auto Forward (Fly)",
-        CurrentValue = true,
-        Flag = "FlyAutoFwd",
-        Callback = function(state)
-            flyAutoForward = state
+            wallClimbSpeed = val
         end,
     })
 
@@ -969,17 +976,17 @@ local function loadMainScript()
     })
 
     TabESP:CreateDivider()
-    TabESP:CreateSection("🟢 Highlight Full Badan")
+    TabESP:CreateSection("🟢 Hologram Chams")
 
     TabESP:CreateToggle({
-        Name = "Highlight Hijau",
+        Name = "HOLOGRAM",
         CurrentValue = false,
-        Flag = "Highlight",
+        Flag = "Hologram",
         Callback = function(state)
-            toggleHighlight(state)
+            toggleChams(state)
             Rayfield:Notify({
-                Title = "Highlight",
-                Content = state and "Highlight Hijau DI-AKTIFKAN" or "Highlight Dinonaktifkan",
+                Title = "Hologram",
+                Content = state and "Hologram DI-AKTIFKAN" or "Hologram Dinonaktifkan",
                 Duration = 2,
                 Image = 4483362458
             })
@@ -1072,7 +1079,7 @@ local function loadMainScript()
         end
         task.wait(1)
         if noclipEnabled then startNoclip() end
-        if flyEnabled then startFlyMode() end
+        if wallClimbEnabled then startWallClimb() end
     end)
 
     TabUtil:CreateDivider()
@@ -1410,16 +1417,16 @@ end
 Players.PlayerAdded:Connect(function(p) 
     createESP(p) 
     createSkeleton(p)
-    if highlightEnabled then
+    if chamsEnabled then
         task.wait(0.5)
-        applyHighlightToPlayer(p)
+        applyChams(p)
     end
 end)
 
 Players.PlayerRemoving:Connect(function(p)
     if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
     if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
-    removeHighlightFromPlayer(p)
+    removeChams(p)
 end)
 
 -- ================== START ==================
