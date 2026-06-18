@@ -150,6 +150,7 @@ local lineColor = Color3.fromRGB(0, 0, 0)
 local skeletonEnabled = false
 local ESPTable = {}
 local SkeletonESP = {}
+local highlightConnections = {}
 
 local playerCounterEnabled = false
 local enemyCountText = nil
@@ -190,6 +191,12 @@ local invisibleHumanoid = nil
 local skeletonColor = Color3.fromRGB(0, 255, 0)
 local boxColor = Color3.fromRGB(0, 0, 0)
 local MAX_ESP_DISTANCE = 200000
+
+-- ================== ESP HIGHLIGHT FULL BADAN ==================
+local highlightEnabled = false
+local highlightColor = Color3.fromRGB(0, 255, 0) -- Hijau
+local highlightTransparency = 0.5
+local highlightPlayers = {}
 
 -- ================== FITUR BARU & BYPASS ==================
 local fullBrightEnabled = false
@@ -335,6 +342,116 @@ local function toggleInvisible(state)
     end
 end
 
+-- ================== ESP HIGHLIGHT FULL BADAN ==================
+local function toggleHighlight(state)
+    highlightEnabled = state
+    
+    if state then
+        -- Beri highlight ke semua player yang sudah ada
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                applyHighlightToPlayer(player)
+            end
+        end
+    else
+        -- Hapus semua highlight
+        for _, player in pairs(Players:GetPlayers()) do
+            removeHighlightFromPlayer(player)
+        end
+        -- Hapus semua connection
+        for _, conn in pairs(highlightConnections) do
+            pcall(function() conn:Disconnect() end)
+        end
+        highlightConnections = {}
+    end
+end
+
+local function applyHighlightToPlayer(player)
+    if player == LocalPlayer then return end
+    
+    -- Hapus highlight lama
+    removeHighlightFromPlayer(player)
+    
+    -- Buat connection untuk memonitor karakter player
+    local conn
+    conn = player.CharacterAdded:Connect(function(char)
+        task.wait(0.5) -- Tunggu karakter siap
+        if highlightEnabled and char then
+            highlightPlayerParts(char)
+        end
+    end)
+    table.insert(highlightConnections, conn)
+    
+    -- Highlight karakter saat ini jika ada
+    if player.Character then
+        task.wait(0.3)
+        highlightPlayerParts(player.Character)
+    end
+end
+
+local function highlightPlayerParts(char)
+    if not char then return end
+    
+    -- Cari semua BasePart di karakter
+    local parts = {}
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            table.insert(parts, part)
+        end
+    end
+    
+    -- Highlight semua part dengan warna hijau dan transparan
+    for _, part in pairs(parts) do
+        pcall(function()
+            -- Simpan warna asli jika belum disimpan
+            if not highlightPlayers[part] then
+                highlightPlayers[part] = {
+                    origColor = part.Color,
+                    origTransparency = part.Transparency,
+                    origMaterial = part.Material
+                }
+            end
+            
+            -- Set highlight
+            part.Color = highlightColor
+            part.Transparency = highlightTransparency
+            part.Material = Enum.Material.SmoothPlastic
+        end)
+    end
+end
+
+local function removeHighlightFromPlayer(player)
+    if not player then return end
+    
+    -- Kembalikan semua part ke warna asli
+    for part, data in pairs(highlightPlayers) do
+        pcall(function()
+            if part and part.Parent then
+                part.Color = data.origColor
+                part.Transparency = data.origTransparency
+                part.Material = data.origMaterial
+            end
+        end)
+        highlightPlayers[part] = nil
+    end
+    
+    -- Bersihkan highlightPlayers yang sudah tidak valid
+    for part, _ in pairs(highlightPlayers) do
+        if not part or not part.Parent then
+            highlightPlayers[part] = nil
+        end
+    end
+end
+
+local function cleanHighlightData()
+    -- Hapus data highlight yang sudah tidak valid
+    for part, _ in pairs(highlightPlayers) do
+        if not part or not part.Parent then
+            highlightPlayers[part] = nil
+        end
+    end
+end
+
 -- ================== FULL BRIGHT ==================
 local function toggleFullBright(state)
     fullBrightEnabled = state
@@ -473,14 +590,12 @@ end
 local function toggleAntiCheatBypass(state)
     antiCheatBypassEnabled = state
     if state then
-        -- Hooking internal index meta-method (Aman dari deteksi WalkSpeed/JumpPower lokal)
         local rawmeta = getrawmetatable(game)
         if setreadonly then setreadonly(rawmeta, false) end
         local oldIndex = rawmeta.__index
         
         rawmeta.__index = newcclosure(function(self, key)
             if antiCheatBypassEnabled and not checkcaller() then
-                -- Manipulasi pembacaan properti WalkSpeed & JumpPower dari deteksi script game lokal
                 if self:IsA("Humanoid") then
                     if key == "WalkSpeed" then return 16 end
                     if key == "JumpPower" then return 50 end
@@ -491,13 +606,11 @@ local function toggleAntiCheatBypass(state)
         
         if setreadonly then setreadonly(rawmeta, true) end
         
-        -- Mengelabui sistem deteksi pergerakan ekstrem (Anti-Lagback/Fly Bypass)
         task.spawn(function()
             while antiCheatBypassEnabled do
                 task.wait(0.1)
                 pcall(function()
                     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        -- Memberikan sedikit Velocity konstan agar server mengira pergerakan jatuh/berjalan adalah legal
                         if flyEnabled or speedEnabled then
                             LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 0.05, 0)
                         end
@@ -658,6 +771,14 @@ RunService.RenderStepped:Connect(function()
         enemyCountText.Visible = true
     elseif enemyCountText then
         enemyCountText.Visible = false
+    end
+end)
+
+-- Clean highlight data periodically
+task.spawn(function()
+    while true do
+        task.wait(5)
+        cleanHighlightData()
     end
 end)
 
@@ -844,6 +965,24 @@ local function loadMainScript()
         Flag = "PlayerCounter",
         Callback = function(state)
             playerCounterEnabled = state
+        end,
+    })
+
+    TabESP:CreateDivider()
+    TabESP:CreateSection("🟢 Highlight Full Badan")
+
+    TabESP:CreateToggle({
+        Name = "Highlight Hijau",
+        CurrentValue = false,
+        Flag = "Highlight",
+        Callback = function(state)
+            toggleHighlight(state)
+            Rayfield:Notify({
+                Title = "Highlight",
+                Content = state and "Highlight Hijau DI-AKTIFKAN" or "Highlight Dinonaktifkan",
+                Duration = 2,
+                Image = 4483362458
+            })
         end,
     })
 
@@ -1263,11 +1402,24 @@ local function startKeySystem()
 end
 
 -- ================== ESP PLAYER INIT ==================
-for _, p in pairs(Players:GetPlayers()) do createESP(p) createSkeleton(p) end
-Players.PlayerAdded:Connect(function(p) createESP(p) createSkeleton(p) end)
+for _, p in pairs(Players:GetPlayers()) do 
+    createESP(p) 
+    createSkeleton(p)
+end
+
+Players.PlayerAdded:Connect(function(p) 
+    createESP(p) 
+    createSkeleton(p)
+    if highlightEnabled then
+        task.wait(0.5)
+        applyHighlightToPlayer(p)
+    end
+end)
+
 Players.PlayerRemoving:Connect(function(p)
     if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
     if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
+    removeHighlightFromPlayer(p)
 end)
 
 -- ================== START ==================
