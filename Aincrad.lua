@@ -10,6 +10,7 @@ local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
 
 -- Deklarasikan Rayfield secara global agar bisa diakses oleh semua fungsi
 local Rayfield = nil 
@@ -151,10 +152,10 @@ local skeletonEnabled = false
 local ESPTable = {}
 local SkeletonESP = {}
 
--- ================== HOLOGRAM CHAMS ==================
+-- ================== HOLOGRAM CHAMS (FIXED) ==================
 local chamsEnabled = false
-local chamsColor = Color3.fromRGB(0, 255, 0) -- Hijau
-local chamsTransparency = 0.3
+local chamsColor = Color3.fromRGB(0, 255, 0) -- Hijau terang
+local chamsTransparency = 0.2 -- Biar tembus pandang
 local chamsMaterial = Enum.Material.Neon
 local chamsParts = {}
 local chamsConnections = {}
@@ -162,13 +163,13 @@ local chamsConnections = {}
 local playerCounterEnabled = false
 local enemyCountText = nil
 
--- ================== WALL CLIMB ==================
-local wallClimbEnabled = false
-local wallClimbSpeed = 20
-local wallClimbConnection = nil
-local wallClimbBV = nil
-local originalGravity = workspace.Gravity
-local isOnWall = false
+-- ================== AUTO PARRY ==================
+local autoParryEnabled = false
+local parryKey = Enum.KeyCode.F -- default
+local parryDistance = 8
+local parryCooldown = 0.5
+local lastParryTime = 0
+local parryConnection = nil
 
 local noclipEnabled = false
 local noclipConnection = nil
@@ -235,84 +236,66 @@ local function stopNoclip()
     if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
 end
 
--- ================== WALL CLIMB ==================
-local function startWallClimb()
-    if wallClimbConnection then wallClimbConnection:Disconnect() end
+-- ================== AUTO PARRY ==================
+local function startAutoParry()
+    if parryConnection then parryConnection:Disconnect() end
     
-    wallClimbConnection = RunService.Heartbeat:Connect(function()
-        if not wallClimbEnabled then return end
+    parryConnection = RunService.Heartbeat:Connect(function()
+        if not autoParryEnabled then return end
         
         local char = LocalPlayer.Character
         if not char then return end
         
         local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum then return end
+        if not hrp then return end
         
-        -- Cek apakah player sedang menekan W (maju)
-        local moveForward = UserInputService:IsKeyDown(Enum.KeyCode.W)
-        local moveUp = UserInputService:IsKeyDown(Enum.KeyCode.Space)
-        
-        -- Raycast ke depan untuk deteksi tembok
-        local origin = hrp.Position
-        local direction = hrp.CFrame.LookVector
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {char}
-        raycastParams.IgnoreWater = true
-        
-        local rayResult = workspace:Raycast(origin, direction * 3, raycastParams)
-        
-        -- Cek apakah ada tembok di depan
-        local wallFound = rayResult and rayResult.Instance and rayResult.Instance.CanCollide
-        
-        if wallFound and (moveForward or moveUp) then
-            -- Matikan gravity sementara
-            workspace.Gravity = 0
+        -- Cek player lain dalam jarak tertentu
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            if not player.Character then continue end
             
-            -- Buat BodyVelocity untuk naik
-            if wallClimbBV then wallClimbBV:Destroy() end
-            wallClimbBV = Instance.new("BodyVelocity")
-            wallClimbBV.Velocity = Vector3.new(0, wallClimbSpeed, 0)
-            wallClimbBV.MaxForce = Vector3.new(0, 9e9, 0)
-            wallClimbBV.Parent = hrp
+            local targetHrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if not targetHrp then continue end
             
-            isOnWall = true
-            
-        elseif wallFound and not moveForward and not moveUp then
-            -- Nempel di tembok tanpa naik (Wall Grab)
-            workspace.Gravity = 0
-            if wallClimbBV then wallClimbBV:Destroy() end
-            wallClimbBV = Instance.new("BodyVelocity")
-            wallClimbBV.Velocity = Vector3.new(0, 0, 0)
-            wallClimbBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-            wallClimbBV.Parent = hrp
-            isOnWall = true
-            
-        else
-            -- Kembalikan gravity normal
-            workspace.Gravity = originalGravity
-            if wallClimbBV then wallClimbBV:Destroy() end
-            wallClimbBV = nil
-            isOnWall = false
+            local dist = (hrp.Position - targetHrp.Position).Magnitude
+            if dist <= parryDistance then
+                -- Cek apakah target menghadap ke kita (opsional)
+                local lookVec = targetHrp.CFrame.LookVector
+                local toPlayer = (hrp.Position - targetHrp.Position).Unit
+                local dot = lookVec:Dot(toPlayer)
+                
+                if dot > 0.3 then -- target menghadap kita
+                    -- Simulasi tekan tombol parry
+                    if tick() - lastParryTime > parryCooldown then
+                        lastParryTime = tick()
+                        -- Simulasikan input key
+                        pcall(function()
+                            VirtualUser:CaptureController()
+                            VirtualUser:ClickButton2(Vector2.new(0,0))
+                        end)
+                        -- Alternatif: kirim key press via UserInputService
+                        -- UserInputService:SetKeyDown(parryKey, true)
+                        -- task.wait(0.05)
+                        -- UserInputService:SetKeyDown(parryKey, false)
+                        break
+                    end
+                end
+            end
         end
     end)
 end
 
-local function stopWallClimb()
-    wallClimbEnabled = false
-    if wallClimbConnection then wallClimbConnection:Disconnect() wallClimbConnection = nil end
-    if wallClimbBV then wallClimbBV:Destroy() wallClimbBV = nil end
-    workspace.Gravity = originalGravity
-    isOnWall = false
+local function stopAutoParry()
+    autoParryEnabled = false
+    if parryConnection then parryConnection:Disconnect() parryConnection = nil end
 end
 
-local function toggleWallClimb(state)
-    wallClimbEnabled = state
+local function toggleAutoParry(state)
+    autoParryEnabled = state
     if state then
-        startWallClimb()
+        startAutoParry()
     else
-        stopWallClimb()
+        stopAutoParry()
     end
 end
 
@@ -372,50 +355,45 @@ local function toggleInvisible(state)
     end
 end
 
--- ================== HOLOGRAM CHAMS ==================
+-- ================== HOLOGRAM CHAMS (FIXED - PAKAI HIGHLIGHT ASLI) ==================
 local function applyChams(player)
     if player == LocalPlayer then return end
-    
+
     local char = player.Character
     if not char then return end
-    
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            pcall(function()
-                if not chamsParts[part] then
-                    chamsParts[part] = {
-                        origColor = part.Color,
-                        origTransparency = part.Transparency,
-                        origMaterial = part.Material
-                    }
-                end
-                
-                part.Color = chamsColor
-                part.Transparency = chamsTransparency
-                part.Material = chamsMaterial
-            end)
-        end
-    end
+
+    pcall(function()
+        -- Hapus highlight lama kalau ada, biar ga dobel
+        local old = char:FindFirstChild("ChamsHighlight")
+        if old then old:Destroy() end
+
+        local hl = Instance.new("Highlight")
+        hl.Name                = "ChamsHighlight"
+        hl.FillColor           = chamsColor
+        hl.FillTransparency    = chamsTransparency
+        hl.OutlineColor        = Color3.fromRGB(255, 255, 255)
+        hl.OutlineTransparency = 0
+        hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop -- ini yang bikin tembus tembok
+        hl.Adornee             = char
+        hl.Parent               = char
+
+        chamsParts[player] = hl
+    end)
 end
 
 local function removeChams(player)
     if not player then return end
-    
-    for part, data in pairs(chamsParts) do
-        pcall(function()
-            if part and part.Parent then
-                part.Color = data.origColor
-                part.Transparency = data.origTransparency
-                part.Material = data.origMaterial
-            end
-        end)
-        chamsParts[part] = nil
+
+    local hl = chamsParts[player]
+    if hl then
+        pcall(function() hl:Destroy() end)
+        chamsParts[player] = nil
     end
-    
-    for part, _ in pairs(chamsParts) do
-        if not part or not part.Parent then
-            chamsParts[part] = nil
-        end
+
+    -- Fallback: kalau ada player yang ChamsHighlight-nya nyangkut tanpa tabel
+    if player.Character then
+        local stray = player.Character:FindFirstChild("ChamsHighlight")
+        if stray then pcall(function() stray:Destroy() end) end
     end
 end
 
@@ -429,6 +407,7 @@ local function toggleChams(state)
             end
         end
         
+        -- Monitor player baru
         local conn = Players.PlayerAdded:Connect(function(player)
             player.CharacterAdded:Connect(function(char)
                 task.wait(0.5)
@@ -443,6 +422,7 @@ local function toggleChams(state)
         end)
         table.insert(chamsConnections, conn)
         
+        -- Monitor player leaving
         local conn2 = Players.PlayerRemoving:Connect(function(player)
             removeChams(player)
         end)
@@ -459,17 +439,6 @@ local function toggleChams(state)
         chamsConnections = {}
     end
 end
-
-task.spawn(function()
-    while true do
-        task.wait(5)
-        for part, _ in pairs(chamsParts) do
-            if not part or not part.Parent then
-                chamsParts[part] = nil
-            end
-        end
-    end
-end)
 
 -- ================== FULL BRIGHT ==================
 local function toggleFullBright(state)
@@ -793,6 +762,18 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- Cleanup chams data
+task.spawn(function()
+    while true do
+        task.wait(5)
+        for part, _ in pairs(chamsParts) do
+            if not part or not part.Parent then
+                chamsParts[part] = nil
+            end
+        end
+    end
+end)
+
 -- ================== MAIN RAYFIELD UI ==================
 local function loadMainScript()
     if mainWindowLoaded then return end
@@ -819,14 +800,14 @@ local function loadMainScript()
     local TabMain = Window:CreateTab("Main", "zap")
 
     TabMain:CreateToggle({
-        Name = "Wall Climb",
+        Name = "Auto Parry",
         CurrentValue = false,
-        Flag = "WallClimb",
+        Flag = "AutoParry",
         Callback = function(state)
-            toggleWallClimb(state)
+            toggleAutoParry(state)
             Rayfield:Notify({
-                Title = "Wall Climb",
-                Content = state and "Wall Climb DI-AKTIFKAN!" or "Wall Climb Dinonaktifkan",
+                Title = "Auto Parry",
+                Content = state and "Auto Parry DI-AKTIFKAN!" or "Auto Parry Dinonaktifkan",
                 Duration = 2,
                 Image = 4483362458
             })
@@ -834,14 +815,14 @@ local function loadMainScript()
     })
 
     TabMain:CreateSlider({
-        Name = "Climb Speed",
-        Range = {5, 50},
+        Name = "Parry Distance",
+        Range = {3, 20},
         Increment = 1,
-        Suffix = "",
-        CurrentValue = wallClimbSpeed,
-        Flag = "ClimbSpeed",
+        Suffix = " studs",
+        CurrentValue = parryDistance,
+        Flag = "ParryDistance",
         Callback = function(val)
-            wallClimbSpeed = val
+            parryDistance = val
         end,
     })
 
@@ -975,9 +956,7 @@ local function loadMainScript()
         end,
     })
 
-    TabESP:CreateDivider()
-    TabESP:CreateSection("🟢 Hologram Chams")
-
+    -- ================== CHAMS (LANGSUNG TANPA HEADER) ==================
     TabESP:CreateToggle({
         Name = "HOLOGRAM",
         CurrentValue = false,
@@ -1079,7 +1058,6 @@ local function loadMainScript()
         end
         task.wait(1)
         if noclipEnabled then startNoclip() end
-        if wallClimbEnabled then startWallClimb() end
     end)
 
     TabUtil:CreateDivider()
