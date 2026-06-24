@@ -12,9 +12,6 @@ local Lighting = game:GetService("Lighting")
 local TeleportService = game:GetService("TeleportService")
 local VirtualUser = game:GetService("VirtualUser")
 
--- Deklarasikan Rayfield secara global agar bisa diakses oleh semua fungsi
-local Rayfield = nil 
-
 -- ================== DETEKSI NAMA EXECUTOR ==================
 local function detectExecutor()
     local executorName = "Unknown Executor"
@@ -55,6 +52,7 @@ local keyJenis = ""
 local keyValidGlobal = false
 local infoKeyCountdownLabel = nil
 local mainWindowLoaded = false
+local keyWindowRef = nil
 
 local function loadKeyData()
     if isfile and isfile(SAVE_FILE) then
@@ -152,20 +150,18 @@ local skeletonEnabled = false
 local ESPTable = {}
 local SkeletonESP = {}
 
--- ================== HOLOGRAM CHAMS (FIXED) ==================
+-- HOLOGRAM CHAMS
 local chamsEnabled = false
-local chamsColor = Color3.fromRGB(0, 255, 0) -- Hijau terang
-local chamsTransparency = 0.2 -- Biar tembus pandang
-local chamsMaterial = Enum.Material.Neon
+local chamsColor = Color3.fromRGB(0, 255, 0)
+local chamsTransparency = 0.2
 local chamsParts = {}
 local chamsConnections = {}
 
 local playerCounterEnabled = false
 local enemyCountText = nil
 
--- ================== AUTO PARRY ==================
+-- AUTO PARRY
 local autoParryEnabled = false
-local parryKey = Enum.KeyCode.F -- default
 local parryDistance = 8
 local parryCooldown = 0.5
 local lastParryTime = 0
@@ -200,7 +196,7 @@ local skeletonColor = Color3.fromRGB(0, 255, 0)
 local boxColor = Color3.fromRGB(0, 0, 0)
 local MAX_ESP_DISTANCE = 200000
 
--- ================== FITUR BARU & BYPASS ==================
+-- FITUR BYPASS
 local fullBrightEnabled = false
 local originalBrightness = Lighting.Brightness
 local originalClockTime = Lighting.ClockTime
@@ -214,11 +210,7 @@ local originalFogEnd = Lighting.FogEnd
 local originalFogStart = Lighting.FogStart
 local originalFogColor = Lighting.FogColor
 
-local serverHopConnections = {}
-
--- Bypass States
 local antiCheatBypassEnabled = false
-local bypassHook = nil
 
 -- ================== ENGINE ACTIONS ==================
 local function startNoclip()
@@ -236,7 +228,6 @@ local function stopNoclip()
     if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
 end
 
--- ================== AUTO PARRY ==================
 local function startAutoParry()
     if parryConnection then parryConnection:Disconnect() end
     
@@ -249,7 +240,6 @@ local function startAutoParry()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
         
-        -- Cek player lain dalam jarak tertentu
         for _, player in pairs(Players:GetPlayers()) do
             if player == LocalPlayer then continue end
             if not player.Character then continue end
@@ -259,24 +249,17 @@ local function startAutoParry()
             
             local dist = (hrp.Position - targetHrp.Position).Magnitude
             if dist <= parryDistance then
-                -- Cek apakah target menghadap ke kita (opsional)
                 local lookVec = targetHrp.CFrame.LookVector
                 local toPlayer = (hrp.Position - targetHrp.Position).Unit
                 local dot = lookVec:Dot(toPlayer)
                 
-                if dot > 0.3 then -- target menghadap kita
-                    -- Simulasi tekan tombol parry
+                if dot > 0.3 then
                     if tick() - lastParryTime > parryCooldown then
                         lastParryTime = tick()
-                        -- Simulasikan input key
                         pcall(function()
                             VirtualUser:CaptureController()
                             VirtualUser:ClickButton2(Vector2.new(0,0))
                         end)
-                        -- Alternatif: kirim key press via UserInputService
-                        -- UserInputService:SetKeyDown(parryKey, true)
-                        -- task.wait(0.05)
-                        -- UserInputService:SetKeyDown(parryKey, false)
                         break
                     end
                 end
@@ -292,11 +275,7 @@ end
 
 local function toggleAutoParry(state)
     autoParryEnabled = state
-    if state then
-        startAutoParry()
-    else
-        stopAutoParry()
-    end
+    if state then startAutoParry() else stopAutoParry() end
 end
 
 local function toggleSpin(state)
@@ -355,42 +334,34 @@ local function toggleInvisible(state)
     end
 end
 
--- ================== HOLOGRAM CHAMS (FIXED - PAKAI HIGHLIGHT ASLI) ==================
+-- HOLOGRAM CHAMS
 local function applyChams(player)
     if player == LocalPlayer then return end
-
     local char = player.Character
     if not char then return end
 
     pcall(function()
-        -- Hapus highlight lama kalau ada, biar ga dobel
         local old = char:FindFirstChild("ChamsHighlight")
         if old then old:Destroy() end
 
         local hl = Instance.new("Highlight")
-        hl.Name                = "ChamsHighlight"
-        hl.FillColor           = chamsColor
-        hl.FillTransparency    = chamsTransparency
-        hl.OutlineColor        = Color3.fromRGB(255, 255, 255)
+        hl.Name = "ChamsHighlight"
+        hl.FillColor = chamsColor
+        hl.FillTransparency = chamsTransparency
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
         hl.OutlineTransparency = 0
-        hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop -- ini yang bikin tembus tembok
-        hl.Adornee             = char
-        hl.Parent               = char
-
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee = char
+        hl.Parent = char
         chamsParts[player] = hl
     end)
 end
 
 local function removeChams(player)
     if not player then return end
-
     local hl = chamsParts[player]
-    if hl then
-        pcall(function() hl:Destroy() end)
-        chamsParts[player] = nil
-    end
-
-    -- Fallback: kalau ada player yang ChamsHighlight-nya nyangkut tanpa tabel
+    if hl then pcall(function() hl:Destroy() end) end
+    chamsParts[player] = nil
     if player.Character then
         local stray = player.Character:FindFirstChild("ChamsHighlight")
         if stray then pcall(function() stray:Destroy() end) end
@@ -399,21 +370,14 @@ end
 
 local function toggleChams(state)
     chamsEnabled = state
-    
     if state then
         for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                applyChams(player)
-            end
+            if player ~= LocalPlayer then applyChams(player) end
         end
-        
-        -- Monitor player baru
         local conn = Players.PlayerAdded:Connect(function(player)
-            player.CharacterAdded:Connect(function(char)
+            player.CharacterAdded:Connect(function()
                 task.wait(0.5)
-                if chamsEnabled and player ~= LocalPlayer then
-                    applyChams(player)
-                end
+                if chamsEnabled and player ~= LocalPlayer then applyChams(player) end
             end)
             if chamsEnabled and player ~= LocalPlayer then
                 task.wait(0.5)
@@ -421,26 +385,18 @@ local function toggleChams(state)
             end
         end)
         table.insert(chamsConnections, conn)
-        
-        -- Monitor player leaving
         local conn2 = Players.PlayerRemoving:Connect(function(player)
             removeChams(player)
         end)
         table.insert(chamsConnections, conn2)
-        
     else
-        for _, player in pairs(Players:GetPlayers()) do
-            removeChams(player)
-        end
-        
-        for _, conn in pairs(chamsConnections) do
-            pcall(function() conn:Disconnect() end)
-        end
+        for _, player in pairs(Players:GetPlayers()) do removeChams(player) end
+        for _, conn in pairs(chamsConnections) do pcall(function() conn:Disconnect() end) end
         chamsConnections = {}
     end
 end
 
--- ================== FULL BRIGHT ==================
+-- FULL BRIGHT
 local function toggleFullBright(state)
     fullBrightEnabled = state
     if state then
@@ -471,14 +427,13 @@ local function toggleFullBright(state)
     end
 end
 
--- ================== NO FOG ==================
+-- NO FOG
 local function toggleNoFog(state)
     noFogEnabled = state
     if state then
         originalFogEnd = Lighting.FogEnd
         originalFogStart = Lighting.FogStart
         originalFogColor = Lighting.FogColor
-        
         Lighting.FogEnd = 100000
         Lighting.FogStart = 100000
         Lighting.FogColor = Color3.fromRGB(0, 0, 0)
@@ -489,7 +444,7 @@ local function toggleNoFog(state)
     end
 end
 
--- ================== REJOIN SERVER ==================
+-- REJOIN SERVER
 local function rejoinServer()
     if Rayfield then
         Rayfield:Notify({
@@ -509,7 +464,7 @@ local function rejoinServer()
     end
 end
 
--- ================== SERVER HOP ==================
+-- SERVER HOP
 local function serverHop()
     if Rayfield then
         Rayfield:Notify({
@@ -555,7 +510,7 @@ local function serverHop()
     end
 end
 
--- ================== GOD MODE ==================
+-- GOD MODE
 local function toggleGodMode(state)
     antiDamageEnabled = state
     if antiDamageConnection then antiDamageConnection:Disconnect() antiDamageConnection = nil end
@@ -574,7 +529,7 @@ local function toggleGodMode(state)
     end
 end
 
--- ================== UNIVERSAL ANTI-CHEAT BYPASS ==================
+-- ANTI-CHEAT BYPASS
 local function toggleAntiCheatBypass(state)
     antiCheatBypassEnabled = state
     if state then
@@ -591,21 +546,7 @@ local function toggleAntiCheatBypass(state)
             end
             return oldIndex(self, key)
         end)
-        
         if setreadonly then setreadonly(rawmeta, true) end
-        
-        task.spawn(function()
-            while antiCheatBypassEnabled do
-                task.wait(0.1)
-                pcall(function()
-                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        if speedEnabled then
-                            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0, 0.05, 0)
-                        end
-                    end
-                end)
-            end
-        end)
     end
 end
 
@@ -762,7 +703,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Cleanup chams data
 task.spawn(function()
     while true do
         task.wait(5)
@@ -781,7 +721,10 @@ local function loadMainScript()
     
     createPlayerCounter()
 
-    Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    -- Load Rayfield (hanya 1 kali)
+    if not Rayfield then
+        Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    end
 
     local Window = Rayfield:CreateWindow({
         Name = "Drip Client Premium",
@@ -805,12 +748,14 @@ local function loadMainScript()
         Flag = "AutoParry",
         Callback = function(state)
             toggleAutoParry(state)
-            Rayfield:Notify({
-                Title = "Auto Parry",
-                Content = state and "Auto Parry DI-AKTIFKAN!" or "Auto Parry Dinonaktifkan",
-                Duration = 2,
-                Image = 4483362458
-            })
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "Auto Parry",
+                    Content = state and "Auto Parry DI-AKTIFKAN!" or "Auto Parry Dinonaktifkan",
+                    Duration = 2,
+                    Image = 4483362458
+                })
+            end
         end,
     })
 
@@ -877,7 +822,7 @@ local function loadMainScript()
     })
 
     TabMain:CreateToggle({
-        Name = "God Mode (Anti Damage)",
+        Name = "God Mode",
         CurrentValue = false,
         Flag = "GodMode",
         Callback = function(state)
@@ -956,19 +901,20 @@ local function loadMainScript()
         end,
     })
 
-    -- ================== CHAMS (LANGSUNG TANPA HEADER) ==================
     TabESP:CreateToggle({
         Name = "HOLOGRAM",
         CurrentValue = false,
         Flag = "Hologram",
         Callback = function(state)
             toggleChams(state)
-            Rayfield:Notify({
-                Title = "Hologram",
-                Content = state and "Hologram DI-AKTIFKAN" or "Hologram Dinonaktifkan",
-                Duration = 2,
-                Image = 4483362458
-            })
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "Hologram",
+                    Content = state and "Hologram DI-AKTIFKAN" or "Hologram Dinonaktifkan",
+                    Duration = 2,
+                    Image = 4483362458
+                })
+            end
         end,
     })
 
@@ -1001,7 +947,9 @@ local function loadMainScript()
             if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
                and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                 LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
-                Rayfield:Notify({Title = "Teleport", Content = "Berhasil teleport ke " .. targetName, Duration = 2, Image = 4483362458})
+                if Rayfield then
+                    Rayfield:Notify({Title = "Teleport", Content = "Berhasil teleport ke " .. targetName, Duration = 2, Image = 4483362458})
+                end
             end
         end,
     })
@@ -1010,7 +958,9 @@ local function loadMainScript()
         Name = "Refresh Daftar Player",
         Callback = function()
             refreshPlayers()
-            Rayfield:Notify({Title = "Refresh", Content = "Daftar player diperbarui.", Duration = 2, Image = 4483362458})
+            if Rayfield then
+                Rayfield:Notify({Title = "Refresh", Content = "Daftar player diperbarui.", Duration = 2, Image = 4483362458})
+            end
         end,
     })
 
@@ -1018,7 +968,7 @@ local function loadMainScript()
 
     local freezeAllEnabled = false
     TabUtil:CreateToggle({
-        Name = "Freeze All Player (Visual)",
+        Name = "Freeze All Player",
         CurrentValue = false,
         Flag = "FreezeAll",
         Callback = function(state)
@@ -1061,18 +1011,16 @@ local function loadMainScript()
     end)
 
     TabUtil:CreateDivider()
-    TabUtil:CreateSection("Spectator Player")
+    TabUtil:CreateSection("Spectator")
 
-    -- Spectator System
-    local spectateEnabled  = false
-    local spectateTarget   = nil
-    local spectateConn     = nil
-    local originalCamType  = Enum.CameraType.Custom
-    local spectateNames    = {}
+    local spectateEnabled = false
+    local spectateTarget = nil
+    local spectateConn = nil
+    local spectateNames = {}
 
     local function stopSpectate()
         spectateEnabled = false
-        spectateTarget  = nil
+        spectateTarget = nil
         if spectateConn then spectateConn:Disconnect(); spectateConn = nil end
         pcall(function()
             Camera.CameraType = Enum.CameraType.Custom
@@ -1082,16 +1030,17 @@ local function loadMainScript()
 
     local function startSpectate(targetPlayer)
         if not targetPlayer or not targetPlayer.Character then
-            Rayfield:Notify({Title="Spectator", Content="Karakter player tidak ditemukan!", Duration=2, Image=4483362458})
+            if Rayfield then
+                Rayfield:Notify({Title="Spectator", Content="Karakter player tidak ditemukan!", Duration=2, Image=4483362458})
+            end
             return
         end
-        spectateTarget  = targetPlayer
+        spectateTarget = targetPlayer
         spectateEnabled = true
 
         pcall(function()
-            originalCamType        = Camera.CameraType
-            Camera.CameraType      = Enum.CameraType.Custom
-            local targetHum        = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+            Camera.CameraType = Enum.CameraType.Custom
+            local targetHum = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
             if targetHum then Camera.CameraSubject = targetHum end
         end)
 
@@ -1100,22 +1049,23 @@ local function loadMainScript()
             if not spectateEnabled or not spectateTarget then stopSpectate(); return end
             local char = spectateTarget.Character
             if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hrp and hum then
+            if hum then
                 pcall(function()
-                    Camera.CameraType    = Enum.CameraType.Custom
+                    Camera.CameraType = Enum.CameraType.Custom
                     Camera.CameraSubject = hum
                 end)
             end
         end)
 
-        Rayfield:Notify({
-            Title   = "Spectator",
-            Content = "Sekarang menonton: " .. targetPlayer.Name,
-            Duration= 3,
-            Image   = 4483362458
-        })
+        if Rayfield then
+            Rayfield:Notify({
+                Title = "Spectator",
+                Content = "Sekarang menonton: " .. targetPlayer.Name,
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
     end
 
     local function refreshSpectateList()
@@ -1131,19 +1081,19 @@ local function loadMainScript()
     refreshSpectateList()
 
     TabUtil:CreateDropdown({
-        Name          = "Pilih Target Spectator",
-        Options       = spectateNames,
+        Name = "Pilih Target Spectator",
+        Options = spectateNames,
         CurrentOption = {},
         MultipleOptions = false,
-        Flag          = "SpectateTarget",
-        Callback      = function(selected)
+        Flag = "SpectateTarget",
+        Callback = function(selected)
             local name = type(selected) == "table" and selected[1] or selected
             local target = Players:FindFirstChild(name)
-            if spectateEnabled then
-                if target and target.Character then
-                    spectateTarget = target
-                    local hum = target.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then Camera.CameraSubject = hum end
+            if spectateEnabled and target and target.Character then
+                spectateTarget = target
+                local hum = target.Character:FindFirstChildOfClass("Humanoid")
+                if hum then Camera.CameraSubject = hum end
+                if Rayfield then
                     Rayfield:Notify({Title="Spectator", Content="Ganti target ke: "..name, Duration=2, Image=4483362458})
                 end
             end
@@ -1154,26 +1104,32 @@ local function loadMainScript()
         Name = "Refresh Daftar Spectator",
         Callback = function()
             refreshSpectateList()
-            Rayfield:Notify({Title="Refresh", Content="Daftar spectator diperbarui.", Duration=2, Image=4483362458})
+            if Rayfield then
+                Rayfield:Notify({Title="Refresh", Content="Daftar spectator diperbarui.", Duration=2, Image=4483362458})
+            end
         end,
     })
 
     TabUtil:CreateToggle({
-        Name         = "Aktifkan Spectator",
+        Name = "Aktifkan Spectator",
         CurrentValue = false,
-        Flag         = "SpectateToggle",
-        Callback     = function(state)
+        Flag = "SpectateToggle",
+        Callback = function(state)
             if state then
                 local sel = spectateNames[1]
                 local target = Players:FindFirstChild(sel)
                 if target and sel ~= "(Tidak ada player)" then
                     startSpectate(target)
                 else
-                    Rayfield:Notify({Title="Spectator", Content="Pilih player dulu dari dropdown!", Duration=3, Image=4483362458})
+                    if Rayfield then
+                        Rayfield:Notify({Title="Spectator", Content="Pilih player dulu dari dropdown!", Duration=3, Image=4483362458})
+                    end
                 end
             else
                 stopSpectate()
-                Rayfield:Notify({Title="Spectator", Content="Spectator dinonaktifkan.", Duration=2, Image=4483362458})
+                if Rayfield then
+                    Rayfield:Notify({Title="Spectator", Content="Spectator dinonaktifkan.", Duration=2, Image=4483362458})
+                end
             end
         end,
     })
@@ -1181,14 +1137,15 @@ local function loadMainScript()
     Players.PlayerRemoving:Connect(function(p)
         if spectateTarget == p then
             stopSpectate()
-            Rayfield:Notify({Title="Spectator", Content=p.Name.." keluar dari server!", Duration=3, Image=4483362458})
+            if Rayfield then
+                Rayfield:Notify({Title="Spectator", Content=p.Name.." keluar dari server!", Duration=3, Image=4483362458})
+            end
         end
     end)
 
     -- ================== TAB SETTINGS ==================
     local TabSettings = Window:CreateTab("Settings", "settings")
 
-    -- SEKSI BARU: BYPASS SYSTEM
     TabSettings:CreateSection("🛡️ Anti-Cheat Bypass")
 
     TabSettings:CreateToggle({
@@ -1197,12 +1154,14 @@ local function loadMainScript()
         Flag = "AC_Bypass",
         Callback = function(state)
             toggleAntiCheatBypass(state)
-            Rayfield:Notify({
-                Title = "Bypass System",
-                Content = state and "Universal Bypass DI-AKTIFKAN!" or "Bypass dinonaktifkan.",
-                Duration = 3,
-                Image = 4483362458
-            })
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "Bypass System",
+                    Content = state and "Universal Bypass DI-AKTIFKAN!" or "Bypass dinonaktifkan.",
+                    Duration = 3,
+                    Image = 4483362458
+                })
+            end
         end,
     })
 
@@ -1215,12 +1174,14 @@ local function loadMainScript()
         Flag = "FullBright",
         Callback = function(state)
             toggleFullBright(state)
-            Rayfield:Notify({
-                Title = "Full Bright",
-                Content = state and "Full Bright diaktifkan" or "Full Bright dinonaktifkan",
-                Duration = 2,
-                Image = 4483362458
-            })
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "Full Bright",
+                    Content = state and "Full Bright diaktifkan" or "Full Bright dinonaktifkan",
+                    Duration = 2,
+                    Image = 4483362458
+                })
+            end
         end,
     })
 
@@ -1233,12 +1194,14 @@ local function loadMainScript()
         Flag = "NoFog",
         Callback = function(state)
             toggleNoFog(state)
-            Rayfield:Notify({
-                Title = "No Fog",
-                Content = state and "No Fog diaktifkan" or "No Fog dinonaktifkan",
-                Duration = 2,
-                Image = 4483362458
-            })
+            if Rayfield then
+                Rayfield:Notify({
+                    Title = "No Fog",
+                    Content = state and "No Fog diaktifkan" or "No Fog dinonaktifkan",
+                    Duration = 2,
+                    Image = 4483362458
+                })
+            end
         end,
     })
 
@@ -1261,84 +1224,19 @@ local function loadMainScript()
 
     TabSettings:CreateDivider()
     TabSettings:CreateSection("⚠️ Informasi")
-
     TabSettings:CreateLabel("Bypass direkomendasikan diaktifkan")
-    TabSettings:CreateLabel("")
 
     -- ================== TAB INFO ==================
     local TabInfo = Window:CreateTab("Info", "info")
 
-    -- ================== PROFIL AKUN ROBLOX ==================
     TabInfo:CreateSection("👤 Profil Akun")
-
     TabInfo:CreateLabel("Nama: " .. LocalPlayer.Name)
     TabInfo:CreateLabel("Display Name: " .. LocalPlayer.DisplayName)
     TabInfo:CreateLabel("User ID: " .. tostring(LocalPlayer.UserId))
 
-    -- Coba tampilkan avatar DI DALAM tab Info (cari common ancestor dari 2 label unik
-    -- yang sudah pasti ada, biar presisi nemu container aslinya, ga nyasar ke frame lain)
-    task.spawn(function()
-        local ok, content = pcall(function()
-            local thumbType = Enum.ThumbnailType.HeadShot
-            local thumbSize = Enum.ThumbnailSize.Size180x180
-            local c, isReady = Players:GetUserThumbnailAsync(LocalPlayer.UserId, thumbType, thumbSize)
-            return c
-        end)
-        if not (ok and content) then return end
-
-        task.wait(1.5) -- tunggu Rayfield selesai render UI-nya
-
-        local CoreGui = game:GetService("CoreGui")
-
-        local function findCommonAncestor()
-            local labelNama, labelUserId = nil, nil
-            for _, v in pairs(CoreGui:GetDescendants()) do
-                if v:IsA("TextLabel") and v.Text then
-                    if v.Text:find("^Nama: ") then labelNama = v end
-                    if v.Text:find("^User ID: ") then labelUserId = v end
-                end
-            end
-            if not (labelNama and labelUserId) then return nil end
-
-            local ancestorsA = {}
-            local node = labelNama
-            while node do ancestorsA[node] = true; node = node.Parent end
-
-            node = labelUserId
-            while node do
-                if ancestorsA[node] then return node end
-                node = node.Parent
-            end
-            return nil
-        end
-
-        local container = findCommonAncestor()
-        if not container then return end
-
-        pcall(function()
-            local avatarFrame = Instance.new("Frame")
-            avatarFrame.Name = "AAvatarCard" -- huruf "AA" biar urutan alfabet paling atas kalau SortOrder pakai Name
-            avatarFrame.Size = UDim2.new(0, 64, 0, 64)
-            avatarFrame.BackgroundTransparency = 1
-            avatarFrame.LayoutOrder = -100 -- biar urutan paling atas kalau SortOrder pakai LayoutOrder
-            avatarFrame.Parent = container
-
-            local avatarImg = Instance.new("ImageLabel")
-            avatarImg.Size = UDim2.new(1, 0, 1, 0)
-            avatarImg.BackgroundTransparency = 1
-            avatarImg.Image = content
-            avatarImg.Parent = avatarFrame
-
-            local imgCorner = Instance.new("UICorner")
-            imgCorner.CornerRadius = UDim.new(1, 0)
-            imgCorner.Parent = avatarImg
-        end)
-    end)
-
     TabInfo:CreateDivider()
 
     TabInfo:CreateSection("Informasi Lisensi")
-
     TabInfo:CreateLabel("Executor: " .. userExecutor)
     local keyPaketStr = keyJenis ~= "" and keyJenis or "Tidak diketahui"
     TabInfo:CreateLabel("Paket: " .. keyPaketStr)
@@ -1371,9 +1269,13 @@ local function loadMainScript()
         Callback = function()
             if setclipboard then
                 setclipboard(WEBSITE_URL)
-                Rayfield:Notify({Title = "Berhasil", Content = "Link key berhasil disalin!", Duration = 3, Image = 4483362458})
+                if Rayfield then
+                    Rayfield:Notify({Title = "Berhasil", Content = "Link key berhasil disalin!", Duration = 3, Image = 4483362458})
+                end
             else
-                Rayfield:Notify({Title = "Info", Content = WEBSITE_URL, Duration = 5, Image = 4483362458})
+                if Rayfield then
+                    Rayfield:Notify({Title = "Info", Content = WEBSITE_URL, Duration = 5, Image = 4483362458})
+                end
             end
         end,
     })
@@ -1389,7 +1291,7 @@ end
 local function startKeySystem()
     local TempRayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
-    local KeyWindow = TempRayfield:CreateWindow({
+    keyWindowRef = TempRayfield:CreateWindow({
         Name = "Drip Client - Verifikasi",
         LoadingTitle = "Drip Client",
         LoadingSubtitle = "Masukkan Key Anda",
@@ -1400,11 +1302,10 @@ local function startKeySystem()
         KeySystem = false,
     })
 
-    local KeyTab = KeyWindow:CreateTab("Key System", "key-round")
+    local KeyTab = keyWindowRef:CreateTab("Key System", "key-round")
     KeyTab:CreateSection("Autentikasi Key Server")
 
     local statusLabel = KeyTab:CreateLabel("Menunggu verifikasi lisensi...")
-
     local inputKeyValue = ""
 
     KeyTab:CreateInput({
@@ -1438,7 +1339,12 @@ local function startKeySystem()
                 pcall(function() statusLabel:Set("✅ Key Valid! Memuat interface...") end)
                 TempRayfield:Notify({Title = "Sukses!", Content = "Key valid! Interface sedang dimuat.", Duration = 3, Image = 4483362458})
                 task.wait(1.5)
-                pcall(function() KeyWindow:Destroy() end)
+                pcall(function() 
+                    if keyWindowRef then 
+                        keyWindowRef:Destroy() 
+                        keyWindowRef = nil
+                    end
+                end)
                 task.wait(0.3)
                 loadMainScript()
             else
@@ -1477,8 +1383,18 @@ Players.PlayerAdded:Connect(function(p)
 end)
 
 Players.PlayerRemoving:Connect(function(p)
-    if ESPTable[p] then for _, d in pairs(ESPTable[p]) do pcall(function() d:Remove() end) end ESPTable[p] = nil end
-    if SkeletonESP[p] then for _, ld in pairs(SkeletonESP[p]) do pcall(function() ld[1]:Remove() end) end SkeletonESP[p] = nil end
+    if ESPTable[p] then 
+        for _, d in pairs(ESPTable[p]) do 
+            pcall(function() d:Remove() end) 
+        end 
+        ESPTable[p] = nil 
+    end
+    if SkeletonESP[p] then 
+        for _, ld in pairs(SkeletonESP[p]) do 
+            pcall(function() ld[1]:Remove() end) 
+        end 
+        SkeletonESP[p] = nil 
+    end
     removeChams(p)
 end)
 
