@@ -99,7 +99,7 @@ task.spawn(function()
     end
     
     -- Eksekusi Kick setelah waktu habis
-    LocalPlayer:Kick("\n[DRIP CLIENT MAINTENANCE]\n\nMaaf cuy, game ditutup otomatis karena script sedang dalam proses update besar-besaran oleh Putzzdev.\n\nSilakan pantau perkembangan dan info rilis terbaru di Saluran WhatsApp kami!")
+    LocalPlayer:Kick("\n[KICK by Putzzdev,due to update]\n\nMaaf cuy, game ditutup otomatis karena script sedang dalam proses update besar-besaran oleh Putzzdev.\n\nSilakan pantau perkembangan dan info rilis terbaru di Saluran WhatsApp kami!")
 end)
 
 -- Notification Load
