@@ -10,23 +10,4 @@
     "role": "premium",
     "expired_days": 30,
     "tanggal": "2026-09-01"
-  },
-  "6289876543210": {
-    "nama": "User Free",
-    "role": "free",
-    "expired_days": 7,
-    "tanggal": "2026-09-06"
-  },
-  "6289668330807": {
-    "nama": "dzakii",
-    "role": "user",
-    "expired_days": 1,
-    "tanggal": "2026-09-06"
-  },
-  "6283182124277": {
-    "nama": "tes",
-    "role": "user",
-    "expired_days": 1,
-    "tanggal": "2026-09-06"
-  }
 }
