@@ -2,19 +2,19 @@
   "62895320734328": {
     "nama": "Putzzdev",
     "role": "owner",
-    "expired": "2099-12-31",
+    "expired_days": 99999,
     "tanggal": "2026-09-04"
   },
   "6288976255131": {
     "nama": "User Premium",
     "role": "premium",
-    "expired": "2026-06-07",
+    "expired_days": 30,
     "tanggal": "2026-09-01"
   },
   "6289876543210": {
     "nama": "User Free",
     "role": "free",
-    "expired": "2026-09-13",
+    "expired_days": 7,
     "tanggal": "2026-09-06"
   }
 }
