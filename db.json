@@ -1,17 +1,20 @@
 {
   "62895320734328": {
     "nama": "Putzzdev",
-    "role": "developer",
+    "role": "owner",
+    "expired": "2099-12-31",
     "tanggal": "2026-09-04"
   },
   "6288976255131": {
-    "nama": "Putzzdev",
-    "role": "developer",
-    "tanggal": "2026-09-04"
+    "nama": "User Premium",
+    "role": "premium",
+    "expired": "2026-06-07",
+    "tanggal": "2026-09-01"
   },
-  "6283182124277": {
-    "nama": "RIZKI",
+  "6289876543210": {
+    "nama": "User Free",
     "role": "free",
-    "tanggal": "2026-09-04"
+    "expired": "2026-09-13",
+    "tanggal": "2026-09-06"
   }
 }
