@@ -1,12 +1,11 @@
 -- ============================================================
--- SCRIPT: 8 Ball Pool Duel - Full Feature Pack
--- Platform: Roblox
+-- SCRIPT: 8 Ball Pool Duel - Full Feature Pack v2
+-- Platform: Roblox (PoolScene3D)
 -- Executor: Delta
--- Fitur: Auto Aim, Perfect Shot, Aim Line, Draw Line + Reflection,
---        Wallhack, No Recoil, Auto Win, Auto Farm Coin
+-- Struktur: Workspace.PoolScene3D.Balls (MeshPart)
+--           Atribut: BallNumber
 -- ============================================================
 
--- ================== SERVICES ==================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,85 +39,129 @@ local TargetBalls = {}
 local AimLineGui = nil
 local DrawLines = {}
 local LastRefresh = 0
+local BallsFolder = nil
 
--- ================== HELPER: CARI OBJEK ==================
-local function findCue()
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    for _, obj in pairs(char:GetChildren()) do
-        if obj:IsA("Tool") then
-            local n = string.lower(obj.Name)
-            if string.find(n, "cue") or string.find(n, "stick") then
-                return obj
-            end
-        end
+-- ================== CARI FOLDER BALLS ==================
+local function findBallsFolder()
+    local scene = Workspace:FindFirstChild("PoolScene3D")
+    if scene then
+        local balls = scene:FindFirstChild("Balls")
+        if balls then return balls end
     end
-    return nil
-end
-
-local function findWhiteBall()
+    -- Fallback: cari folder bernama "Balls" di mana saja
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local n = string.lower(obj.Name)
-            if string.find(n, "white") or string.find(n, "cueball") or string.find(n, "cue_ball") then
-                return obj
-            end
+        if obj:IsA("Folder") and obj.Name == "Balls" then
+            return obj
         end
     end
     return nil
 end
 
+-- ================== CARI WHITE BALL ==================
+-- White ball = BallNumber 0, atau nama "Ball0", atau yang paling dekat dengan cue
+local function findWhiteBall()
+    if not BallsFolder then return nil end
+
+    -- Prioritas 1: BallNumber = 0
+    for _, ball in pairs(BallsFolder:GetChildren()) do
+        if ball:IsA("BasePart") then
+            local num = ball:GetAttribute("BallNumber")
+            if num == 0 then return ball end
+        end
+    end
+
+    -- Prioritas 2: nama Ball0
+    local ball0 = BallsFolder:FindFirstChild("Ball0")
+    if ball0 and ball0:IsA("BasePart") then return ball0 end
+
+    -- Prioritas 3: nama mengandung "white" / "cue"
+    for _, ball in pairs(BallsFolder:GetChildren()) do
+        if ball:IsA("BasePart") then
+            local n = string.lower(ball.Name)
+            if string.find(n, "white") or string.find(n, "cue") then
+                return ball
+            end
+        end
+    end
+
+    return nil
+end
+
+-- ================== CARI TARGET BALLS ==================
 local function findTargetBalls()
     local balls = {}
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local n = string.lower(obj.Name)
-            if (string.find(n, "ball") or string.find(n, "billiard"))
-               and not string.find(n, "white")
-               and not string.find(n, "cueball") then
-                table.insert(balls, obj)
+    if not BallsFolder then return balls end
+
+    for _, ball in pairs(BallsFolder:GetChildren()) do
+        if ball:IsA("BasePart") then
+            local num = ball:GetAttribute("BallNumber")
+            if num and num ~= 0 then
+                table.insert(balls, ball)
             end
         end
     end
     return balls
 end
 
+-- ================== CARI CUE ==================
+-- Cue bisa di Character (Tool), Camera, atau Workspace
+local function findCue()
+    -- Cek Character
+    local char = LocalPlayer.Character
+    if char then
+        for _, obj in pairs(char:GetChildren()) do
+            if obj:IsA("Tool") then
+                local n = string.lower(obj.Name)
+                if string.find(n, "cue") or string.find(n, "stick") or string.find(n, "pool") then
+                    return obj
+                end
+            end
+        end
+    end
+
+    -- Cek Camera
+    for _, obj in pairs(Camera:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("Tool") then
+            local n = string.lower(obj.Name)
+            if string.find(n, "cue") or string.find(n, "stick") then
+                return obj
+            end
+        end
+    end
+
+    -- Cek Workspace
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Tool") or (obj:IsA("Model") and obj:FindFirstChild("Handle")) then
+            local n = string.lower(obj.Name)
+            if string.find(n, "cue") or string.find(n, "stick") then
+                return obj
+            end
+        end
+    end
+
+    return nil
+end
+
+-- ================== AMBIL HANDLE CUE ==================
+local function getCueHandle()
+    if not Cue then return nil end
+    if Cue:IsA("Tool") then
+        return Cue:FindFirstChild("Handle")
+    end
+    if Cue:IsA("Model") then
+        return Cue:FindFirstChild("Handle") or Cue.PrimaryPart
+    end
+    return nil
+end
+
 -- ================== AIM LINE ==================
 local function createAimLine()
-    if AimLineGui then AimLineGui:Remove() end
+    if AimLineGui then pcall(function() AimLineGui:Remove() end) end
     AimLineGui = Drawing.new("Line")
     AimLineGui.Thickness = 2
     AimLineGui.Color = Config.LineColor
     AimLineGui.Transparency = 1
     AimLineGui.Visible = false
-end
-
-local function updateAimLine()
-    if not Config.AimLine then
-        if AimLineGui then AimLineGui.Visible = false end
-        return
-    end
-    if not WhiteBall or not Cue then
-        if AimLineGui then AimLineGui.Visible = false end
-        return
-    end
-    if not Cue:FindFirstChild("Handle") then return end
-
-    local direction = Cue.Handle.CFrame.LookVector
-    local startPos = WhiteBall.Position
-    local endPos = startPos + (direction * Config.LineLength)
-
-    local sp, vis1 = Camera:WorldToViewportPoint(startPos)
-    local ep, vis2 = Camera:WorldToViewportPoint(endPos)
-
-    if vis1 and vis2 then
-        AimLineGui.From = Vector2.new(sp.X, sp.Y)
-        AimLineGui.To = Vector2.new(ep.X, ep.Y)
-        AimLineGui.Color = Config.LineColor
-        AimLineGui.Visible = true
-    else
-        AimLineGui.Visible = false
-    end
 end
 
 -- ================== DRAW LINE + REFLECTION ==================
@@ -138,16 +181,21 @@ local function clearDrawLines()
     DrawLines = {}
 end
 
+-- ================== BOUNDING BOX MEJA ==================
 local function getTableBounds()
+    local scene = Workspace:FindFirstChild("PoolScene3D")
+    if not scene then return nil end
+
     local minX, maxX = math.huge, -math.huge
     local minZ, maxZ = math.huge, -math.huge
-    local minY, maxY = math.huge, -math.huge
     local found = false
 
-    for _, obj in pairs(Workspace:GetDescendants()) do
+    -- Cari part yang bisa jadi batas meja
+    for _, obj in pairs(scene:GetDescendants()) do
         if obj:IsA("BasePart") then
             local n = string.lower(obj.Name)
-            if string.find(n, "table") or string.find(n, "meja") or string.find(n, "felt") or string.find(n, "board") then
+            if string.find(n, "table") or string.find(n, "meja") or string.find(n, "felt")
+               or string.find(n, "board") or string.find(n, "rail") or string.find(n, "edge") then
                 found = true
                 local pos = obj.Position
                 local size = obj.Size
@@ -155,23 +203,12 @@ local function getTableBounds()
                 maxX = math.max(maxX, pos.X + size.X/2)
                 minZ = math.min(minZ, pos.Z - size.Z/2)
                 maxZ = math.max(maxZ, pos.Z + size.Z/2)
-                minY = math.min(minY, pos.Y - size.Y/2)
-                maxY = math.max(maxY, pos.Y + size.Y/2)
             end
         end
     end
 
     if not found then return nil end
-    return {minX = minX, maxX = maxX, minZ = minZ, maxZ = maxZ, minY = minY, maxY = maxY}
-end
-
-local function reflectDirection(dir, bounds)
-    local newDir = dir
-    -- Cek dinding X
-    if newDir.X > 0 then
-        -- cek nanti di hit
-    end
-    return newDir
+    return {minX = minX, maxX = maxX, minZ = minZ, maxZ = maxZ}
 end
 
 local function calcReflectionPoint(pos, dir, bounds, maxDist)
@@ -193,16 +230,29 @@ local function calcReflectionPoint(pos, dir, bounds, maxDist)
     return pos + dir * t
 end
 
+-- ================== UPDATE DRAW LINE ==================
 local function updateDrawLine()
     if not Config.DrawLine then
         for _, line in pairs(DrawLines) do line.Visible = false end
         return
     end
-    if not WhiteBall or not Cue then
+
+    WhiteBall = findWhiteBall()
+    if not WhiteBall then
         for _, line in pairs(DrawLines) do line.Visible = false end
         return
     end
-    if not Cue:FindFirstChild("Handle") then return end
+
+    -- Prioritas: pakai cue handle kalau ada
+    local cueHandle = getCueHandle()
+    local cueDir
+
+    if cueHandle then
+        cueDir = cueHandle.CFrame.LookVector
+    else
+        -- Fallback: pakai arah Camera
+        cueDir = Camera.CFrame.LookVector
+    end
 
     local totalLines = Config.DrawReflection and (Config.MaxReflection + 1) or 1
     if #DrawLines < totalLines then
@@ -212,7 +262,6 @@ local function updateDrawLine()
         end
     end
 
-    local cueDir = Cue.Handle.CFrame.LookVector
     local startPos = WhiteBall.Position
     local bounds = getTableBounds()
 
@@ -228,13 +277,14 @@ local function updateDrawLine()
         DrawLines[1].Visible = true
     end
 
+    -- Reflection
     if Config.DrawReflection and bounds then
         local currentPos = startPos
         local currentDir = cueDir
         for i = 2, #DrawLines do
             local reflectPoint = calcReflectionPoint(currentPos, currentDir, bounds, Config.LineLength)
             local newDir = currentDir
-            -- Pantulkan
+
             if math.abs(reflectPoint.X - bounds.minX) < 1 or math.abs(reflectPoint.X - bounds.maxX) < 1 then
                 newDir = Vector3.new(-newDir.X, newDir.Y, newDir.Z)
             end
@@ -260,8 +310,38 @@ local function updateDrawLine()
         end
     else
         for i = 2, #DrawLines do
-            DrawLines[i].Visible = false
+            if DrawLines[i] then DrawLines[i].Visible = false end
         end
+    end
+end
+
+-- ================== UPDATE AIM LINE ==================
+local function updateAimLine()
+    if not Config.AimLine then
+        if AimLineGui then AimLineGui.Visible = false end
+        return
+    end
+    if not WhiteBall then
+        if AimLineGui then AimLineGui.Visible = false end
+        return
+    end
+
+    local cueHandle = getCueHandle()
+    local cueDir = cueHandle and cueHandle.CFrame.LookVector or Camera.CFrame.LookVector
+
+    local startPos = WhiteBall.Position
+    local endPos = startPos + cueDir * Config.LineLength
+
+    local sp, vis1 = Camera:WorldToViewportPoint(startPos)
+    local ep, vis2 = Camera:WorldToViewportPoint(endPos)
+
+    if vis1 and vis2 and AimLineGui then
+        AimLineGui.From = Vector2.new(sp.X, sp.Y)
+        AimLineGui.To = Vector2.new(ep.X, ep.Y)
+        AimLineGui.Color = Config.LineColor
+        AimLineGui.Visible = true
+    else
+        if AimLineGui then AimLineGui.Visible = false end
     end
 end
 
@@ -284,68 +364,51 @@ end
 local function autoAim()
     if not Config.AutoAim then return end
     if not WhiteBall or not Cue then return end
-    if not Cue:FindFirstChild("Handle") then return end
+    local handle = getCueHandle()
+    if not handle then return end
 
     local target = getNearestBall()
     if not target then return end
 
     local direction = (target.Position - WhiteBall.Position).Unit
-    local newCFrame = CFrame.new(WhiteBall.Position, WhiteBall.Position + direction)
-    Cue.Handle.CFrame = newCFrame
+    handle.CFrame = CFrame.new(WhiteBall.Position, WhiteBall.Position + direction)
 end
 
 -- ================== PERFECT SHOT ==================
 local function perfectShot()
     if not Config.PerfectShot then return end
-    if not Cue then return end
-
     local remote = ReplicatedStorage:FindFirstChild("ShotEvent")
                 or ReplicatedStorage:FindFirstChild("Shoot")
                 or ReplicatedStorage:FindFirstChild("FireShot")
                 or ReplicatedStorage:FindFirstChild("Hit")
-
     if remote and remote:IsA("RemoteEvent") then
-        pcall(function()
-            remote:FireServer(1)
-        end)
+        pcall(function() remote:FireServer(1) end)
     end
 end
 
 -- ================== AUTO WIN ==================
 local function autoWin()
     if not Config.AutoWin then return end
-
-    local remotes = {}
     for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
         if obj:IsA("RemoteEvent") then
             local n = string.lower(obj.Name)
             if string.find(n, "win") or string.find(n, "finish") or string.find(n, "surrender") or string.find(n, "forfeit") then
-                table.insert(remotes, obj)
+                pcall(function() obj:FireServer() end)
             end
         end
-    end
-
-    for _, remote in pairs(remotes) do
-        pcall(function() remote:FireServer() end)
     end
 end
 
 -- ================== AUTO FARM COIN ==================
 local function autoFarmCoin()
     if not Config.AutoFarmCoin then return end
-
-    local remotes = {}
     for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
         if obj:IsA("RemoteEvent") then
             local n = string.lower(obj.Name)
             if string.find(n, "claim") or string.find(n, "reward") or string.find(n, "coin") then
-                table.insert(remotes, obj)
+                pcall(function() obj:FireServer() end)
             end
         end
-    end
-
-    for _, remote in pairs(remotes) do
-        pcall(function() remote:FireServer() end)
     end
 end
 
@@ -366,8 +429,7 @@ end
 -- ================== NO RECOIL ==================
 local function noRecoil()
     if not Config.NoRecoil then return end
-    if not Cue then return end
-    local handle = Cue:FindFirstChild("Handle")
+    local handle = getCueHandle()
     if handle then
         pcall(function()
             handle.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0, 0, 0, 0)
@@ -379,6 +441,7 @@ end
 RunService.RenderStepped:Connect(function()
     local now = tick()
     if now - LastRefresh > 1 then
+        BallsFolder = findBallsFolder()
         Cue = findCue()
         WhiteBall = findWhiteBall()
         TargetBalls = findTargetBalls()
@@ -429,7 +492,7 @@ UICorner.Parent = MainFrame
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
 Title.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-Title.Text = "8 Ball Pool Script"
+Title.Text = "8 Ball Pool Script v2"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -518,4 +581,4 @@ infoLabel.Font = Enum.Font.Gotham
 infoLabel.TextSize = 9
 infoLabel.Parent = MainFrame
 
-print("[8 Ball Pool Script] Loaded. RightShift = toggle UI")
+print("[8 Ball Pool Script v2] Loaded. BallsFolder:", BallsFolder and BallsFolder:GetFullName() or "not found")
