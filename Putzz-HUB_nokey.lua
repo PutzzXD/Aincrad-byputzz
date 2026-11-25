@@ -95,7 +95,7 @@ local invisibleHumanoid = nil
 
 local skeletonColor = Color3.fromRGB(0, 255, 0)
 local boxColor = Color3.fromRGB(255, 255, 255)
-local MAX_ESP_DISTANCE = 2000
+local MAX_ESP_DISTANCE = 200000
 
 -- FITUR BYPASS
 local fullBrightEnabled = false
@@ -895,6 +895,96 @@ local function loadMainScript()
         end,
     })
 
+    -- ================== AIMLOCK (JARAK MAKS 100 STUD) ==================
+    TabMain:CreateDivider()
+    TabMain:CreateSection("🎯 Aimlock")
+
+    local AIMLOCK_RANGE  = 100   -- jarak maksimal (stud)
+    local AIMLOCK_SMOOTH = 0.3   -- 0.01 = pelan, 1 = instan
+    local aimlockEnabled = false
+    local aimlockConn    = nil
+    local aimlockCurrent = nil   -- target yang sedang dikunci
+
+    local function isValidAimTarget(p, myPos)
+        if not p or p == LocalPlayer then return nil end
+        if LocalPlayer.Team and p.Team == LocalPlayer.Team then return nil end -- skip teman satu tim
+        local char = p.Character
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local head = char and char:FindFirstChild("Head")
+        if not (hum and head) or hum.Health <= 0 then return nil end
+        local dist = (head.Position - myPos).Magnitude
+        if dist > AIMLOCK_RANGE then return nil end
+        -- wall check: jangan kunci target yang ketutup tembok
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = {LocalPlayer.Character, char}
+        params.IgnoreWater = true
+        local origin = Camera.CFrame.Position
+        if workspace:Raycast(origin, head.Position - origin, params) then return nil end
+        return head, dist
+    end
+
+    local function getAimTarget()
+        local myChar = LocalPlayer.Character
+        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myHRP then return nil end
+        local myPos = myHRP.Position
+
+        -- tetap kunci target lama selama masih valid (ga loncat-loncat)
+        if aimlockCurrent then
+            local head = isValidAimTarget(aimlockCurrent, myPos)
+            if head then return head end
+            aimlockCurrent = nil
+        end
+
+        -- cari yang paling dekat ke crosshair (layar), dalam jarak 100 stud
+        local vp = Camera.ViewportSize
+        local cx, cy = vp.X/2, vp.Y/2
+        local bestHead, bestPlayer, bestScore = nil, nil, math.huge
+        for _, p in ipairs(Players:GetPlayers()) do
+            local head, dist = isValidAimTarget(p, myPos)
+            if head then
+                local sp, onScreen = Camera:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local score = math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2) + dist * 0.5
+                    if score < bestScore then
+                        bestScore, bestHead, bestPlayer = score, head, p
+                    end
+                end
+            end
+        end
+        aimlockCurrent = bestPlayer
+        return bestHead
+    end
+
+    local function startAimlock()
+        if aimlockConn then aimlockConn:Disconnect() end
+        aimlockConn = RunService.RenderStepped:Connect(function()
+            if not aimlockEnabled then return end
+            local head = getAimTarget()
+            if not head then return end
+            local camPos = Camera.CFrame.Position
+            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(camPos, head.Position), AIMLOCK_SMOOTH)
+        end)
+    end
+
+    TabMain:CreateToggle({
+        Name = "Aimlock (maks 100 stud)",
+        CurrentValue = false,
+        Flag = "AimlockToggle",
+        Callback = function(state)
+            aimlockEnabled = state
+            aimlockCurrent = nil
+            if state then
+                startAimlock()
+                Rayfield:Notify({Title="Aimlock", Content="Aktif! Jarak maks 100 stud.", Duration=2, Image=4483362458})
+            else
+                if aimlockConn then aimlockConn:Disconnect(); aimlockConn = nil end
+                Rayfield:Notify({Title="Aimlock", Content="Dinonaktifkan.", Duration=2, Image=4483362458})
+            end
+        end,
+    })
+
     -- ================== TAB ESP ==================
     local TabESP = Window:CreateTab("ESP", "eye")
 
@@ -971,122 +1061,6 @@ local function loadMainScript()
 
     -- ================== TAB SETTINGS ==================
     local TabSettings = Window:CreateTab("Settings", "settings")
-
-    -- ================== AIMLOCK / AIMBOT ==================
-    TabSettings:CreateSection("🎯 Aimlock / Aimbot")
-
-    local aimlockEnabled  = false
-    local aimlockTarget   = "Player"
-    local aimlockFOV      = 100
-    local aimlockConn     = nil
-    local aimlockSmooth   = 0.1
-
-    local function getNearestTarget()
-        local myChar = LocalPlayer.Character
-        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myHRP then return nil end
-
-        local nearest, nearestDist = nil, math.huge
-        local vp = Camera.ViewportSize
-        local centerX, centerY = vp.X/2, vp.Y/2
-
-        if aimlockTarget == "Player" or aimlockTarget == "Both" then
-            for _, p in pairs(Players:GetPlayers()) do
-                if p == LocalPlayer then continue end
-                local char = p.Character
-                local head = char and char:FindFirstChild("Head")
-                if not head then continue end
-                local sp, vis = Camera:WorldToViewportPoint(head.Position)
-                if not vis then continue end
-                local screenDist = math.sqrt((sp.X-centerX)^2 + (sp.Y-centerY)^2)
-                if screenDist < aimlockFOV and screenDist < nearestDist then
-                    nearestDist = screenDist
-                    nearest = head
-                end
-            end
-        end
-
-        if aimlockTarget == "NPC" or aimlockTarget == "Both" then
-            local playerChars = {}
-            for _, p in pairs(Players:GetPlayers()) do
-                if p.Character then playerChars[p.Character] = true end
-            end
-            for _, obj in pairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and not playerChars[obj] then
-                    local hum = obj:FindFirstChildOfClass("Humanoid")
-                    local head = obj:FindFirstChild("Head")
-                    if hum and head and hum.Health > 0 then
-                        local sp, vis = Camera:WorldToViewportPoint(head.Position)
-                        if not vis then continue end
-                        local screenDist = math.sqrt((sp.X-centerX)^2 + (sp.Y-centerY)^2)
-                        if screenDist < aimlockFOV and screenDist < nearestDist then
-                            nearestDist = screenDist
-                            nearest = head
-                        end
-                    end
-                end
-            end
-        end
-
-        return nearest
-    end
-
-    local function startAimlock()
-        if aimlockConn then aimlockConn:Disconnect() end
-        aimlockConn = RunService.RenderStepped:Connect(function()
-            if not aimlockEnabled then return end
-            local target = getNearestTarget()
-            if not target then return end
-            local targetCF = CFrame.new(Camera.CFrame.Position, target.Position)
-            Camera.CFrame = Camera.CFrame:Lerp(targetCF, math.clamp(1 - aimlockSmooth, 0.01, 1))
-        end)
-    end
-
-    TabSettings:CreateToggle({
-        Name = "Aimlock Aktif",
-        CurrentValue = false,
-        Flag = "AimlockToggle",
-        Callback = function(state)
-            aimlockEnabled = state
-            if state then
-                startAimlock()
-                Rayfield:Notify({Title="Aimlock", Content="Aktif! Target: "..aimlockTarget, Duration=2, Image=4483362458})
-            else
-                if aimlockConn then aimlockConn:Disconnect(); aimlockConn=nil end
-                Rayfield:Notify({Title="Aimlock", Content="Dinonaktifkan.", Duration=2, Image=4483362458})
-            end
-        end,
-    })
-
-    TabSettings:CreateDropdown({
-        Name = "Target Aimlock",
-        Options = {"Player", "NPC", "Both"},
-        CurrentOption = {"Player"},
-        Flag = "AimlockTarget",
-        Callback = function(selected)
-            aimlockTarget = type(selected)=="table" and selected[1] or selected
-        end,
-    })
-
-    TabSettings:CreateSlider({
-        Name = "FOV Radius (pixel)",
-        Range = {20, 400},
-        Increment = 10,
-        Suffix = "px",
-        CurrentValue = 100,
-        Flag = "AimlockFOV",
-        Callback = function(v) aimlockFOV = v end,
-    })
-
-    TabSettings:CreateSlider({
-        Name = "Smooth (0=Instant)",
-        Range = {0, 90},
-        Increment = 5,
-        Suffix = "%",
-        CurrentValue = 10,
-        Flag = "AimlockSmooth",
-        Callback = function(v) aimlockSmooth = v/100 end,
-    })
 
     -- ================== ESP COLOR PICKER ==================
     TabSettings:CreateDivider()
