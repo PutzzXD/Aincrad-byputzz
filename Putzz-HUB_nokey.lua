@@ -1506,13 +1506,11 @@ local function loadMainScript()
 
     -- ================== AIMBOT (SNAP INSTAN, JARAK MAKS 250 STUD) ==================
     TabMain:CreateDivider()
-    TabMain:CreateSection("Aimbot")
 
     local AIM_RANGE = 250                                                   -- jarak maksimal (stud)
     local AIM_PARTS = {"Head", "UpperTorso", "Torso", "HumanoidRootPart"}   -- urutan prioritas bagian yang dibidik
     local AIM_BIND  = "PutzzAimbot"
     local aimbotEnabled   = false
-    local aimWallCheck    = true
     local aimbotTarget    = nil
 
     local aimRayParams = RaycastParams.new()
@@ -1531,7 +1529,7 @@ local function loadMainScript()
             if part and (part.Position - myPos).Magnitude <= AIM_RANGE then
                 local _, onScreen = Camera:WorldToViewportPoint(part.Position)
                 if onScreen then
-                    if not aimWallCheck or not workspace:Raycast(camPos, part.Position - camPos, aimRayParams) then
+                    if not workspace:Raycast(camPos, part.Position - camPos, aimRayParams) then
                         return part
                     end
                 end
@@ -1576,7 +1574,7 @@ local function loadMainScript()
     end
 
     TabMain:CreateToggle({
-        Name = "Aimbot (250 stud)",
+        Name = "Aimbot",
         CurrentValue = false,
         Flag = "AimlockToggle",
         Callback = function(state)
@@ -1584,24 +1582,11 @@ local function loadMainScript()
             aimbotTarget = nil
             pcall(function() RunService:UnbindFromRenderStep(AIM_BIND) end)
             if state then
-                -- jalan sesudah script kamera game, jadi ga ditimpa
                 RunService:BindToRenderStep(AIM_BIND, Enum.RenderPriority.Camera.Value + 1, function()
                     local ok, err = pcall(aimbotStep)
                     if not ok then warn("[Aimbot] " .. tostring(err)) end
                 end)
-                UI:Notify({Title = "Aimbot", Content = "Aktif. Kamera langsung kunci musuh yang terlihat (maks 250 stud).", Duration = 2.5})
-            else
-                UI:Notify({Title = "Aimbot", Content = "Dinonaktifkan.", Duration = 2})
             end
-        end,
-    })
-
-    TabMain:CreateToggle({
-        Name = "Wall check (musuh harus terlihat)",
-        CurrentValue = true,
-        Flag = "AimWallCheck",
-        Callback = function(state)
-            aimWallCheck = state
         end,
     })
 
@@ -1722,7 +1707,6 @@ local function loadMainScript()
             local pos = tRoot.Position - tRoot.CFrame.LookVector * 4 + Vector3.new(0, 2, 0)
             myRoot.AssemblyLinearVelocity = Vector3.zero
             myRoot.CFrame = CFrame.new(pos, tRoot.Position)
-            UI:Notify({Title = "Teleport", Content = "Pindah ke " .. name, Duration = 2})
         end,
     })
 
@@ -1762,12 +1746,10 @@ local function loadMainScript()
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.AssemblyAngularVelocity = Vector3.zero
                     root.CFrame = lastSafeCF
-                    UI:Notify({Title = "Anti Void", Content = "Kamu ditarik balik ke posisi aman.", Duration = 2})
                 end
             end)
         end,
     })
-    TabMisc:CreateLabel("Otomatis balik ke posisi napak terakhir kalau jatuh ke void.")
 
     -- ================== TAB SETTINGS ==================
     local TabSettings = Window:CreateTab("Settings", "settings")
