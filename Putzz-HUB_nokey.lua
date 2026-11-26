@@ -749,6 +749,79 @@ do
                 return {Set = function(_, c) apply(c) end, Get = function() return color end}
             end
 
+            function Tab:CreateDropdown(o)
+                local options = o.Options or {}
+                local selected = nil
+                local r = row(46)
+                r.ClipsDescendants = true
+                text(r, {Position = UDim2.new(0, 2, 0, 0), Size = UDim2.new(0.45, 0, 0, 46), TextTruncate = Enum.TextTruncate.AtEnd, Text = tostring(o.Name)})
+                local valLbl = text(r, {
+                    Position = UDim2.new(0.45, 0, 0, 0), Size = UDim2.new(0.55, -26, 0, 46), TextXAlignment = Enum.TextXAlignment.Right,
+                    TextColor3 = C, TextTruncate = Enum.TextTruncate.AtEnd, Text = "Pilih...",
+                })
+                local arrow = text(r, {
+                    Position = UDim2.new(1, -22, 0, 0), Size = UDim2.new(0, 22, 0, 46), TextXAlignment = Enum.TextXAlignment.Center,
+                    TextColor3 = T.Sub, Text = "+",
+                })
+                local hit = new("TextButton", {Size = UDim2.new(1, 0, 0, 46), BackgroundTransparency = 1, Text = "", Parent = r})
+                local list = new("ScrollingFrame", {
+                    Position = UDim2.new(0, 0, 0, 50), Size = UDim2.new(1, 0, 0, 36), BackgroundTransparency = 1, BorderSizePixel = 0,
+                    ScrollBarThickness = 3, ScrollBarImageColor3 = C, CanvasSize = UDim2.new(0, 0, 0, 0),
+                    AutomaticCanvasSize = Enum.AutomaticSize.Y, Parent = r,
+                })
+                new("UIListLayout", {Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list})
+
+                local open = false
+                local function applyHeight()
+                    local lh = math.max(math.min(#options, 4) * 36, 36)
+                    list.Size = UDim2.new(1, 0, 0, lh)
+                    arrow.Text = open and "-" or "+"
+                    tween(r, 0.15, {Size = UDim2.new(1, 0, 0, open and (46 + 6 + lh) or 46)})
+                end
+                local build
+                build = function()
+                    for _, ch in ipairs(list:GetChildren()) do
+                        if ch:IsA("TextButton") or ch:IsA("TextLabel") then ch:Destroy() end
+                    end
+                    if #options == 0 then
+                        text(list, {Size = UDim2.new(1, 0, 0, 34), TextColor3 = T.Sub, Text = "Tidak ada player lain"})
+                    end
+                    for i, name in ipairs(options) do
+                        local on = (name == selected)
+                        local b = new("TextButton", {
+                            Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = on and C or T.Panel, BorderSizePixel = 0,
+                            AutoButtonColor = false, Font = FONT, TextSize = 14, TextColor3 = on and T.Dark or T.Text,
+                            TextXAlignment = Enum.TextXAlignment.Left, Text = "  " .. tostring(name), LayoutOrder = i, Parent = list,
+                        })
+                        round(b, 5)
+                        b.MouseButton1Click:Connect(function()
+                            selected = name
+                            valLbl.Text = tostring(name)
+                            open = false
+                            build()
+                            fire(o.Callback, name)
+                        end)
+                    end
+                    applyHeight()
+                end
+                hit.MouseButton1Click:Connect(function()
+                    open = not open
+                    applyHeight()
+                end)
+                build()
+
+                local obj = {}
+                function obj:Refresh(newOptions)
+                    options = newOptions or {}
+                    local found = false
+                    for _, n in ipairs(options) do if n == selected then found = true break end end
+                    if not found then selected = nil valLbl.Text = "Pilih..." end
+                    build()
+                end
+                function obj:Get() return selected end
+                return obj
+            end
+
             return Tab
         end
 
@@ -867,137 +940,6 @@ LocalPlayer.CharacterAdded:Connect(function()
         if invisibleEnabled then toggleInvisible(true) end
     end
 end)
-
--- HOLOGRAM CHAMS
-local chamsEnabled = false
-local chamsColor = Color3.fromRGB(0, 255, 0)
-local chamsTransparency = 0.2
-local chamsParts = {}
-local chamsConnections = {}
-
-local playerCounterEnabled = false
-local enemyCountText = nil
-
-local autoParryEnabled = false
-local parryDistance = 8
-local parryCooldown = 0.5
-local lastParryTime = 0
-local parryConnection = nil
-
-local noclipEnabled = false
-local noclipConnection = nil
-
-local speedEnabled = false
-local normalSpeed = 16
-local fastSpeed = 60
-
-local jumpPowerEnabled = false
-local jumpPowerValue = 50
-local infinityJumpEnabled = false
-
-local antiDamageEnabled = false
-local antiDamageConnection = nil
-
-local spinEnabled = false
-local spinSpeed = 50
-local spinConnection = nil
-local spinDirection = 1
-
-local invisibleEnabled = false
-local invisibleConnection = nil
-local invisibleParts = {}
-local invisibleRootPart = nil
-local invisibleHumanoid = nil
-
-local skeletonColor = Color3.fromRGB(0, 255, 0)
-local boxColor = Color3.fromRGB(255, 255, 255)
-local MAX_ESP_DISTANCE = 200000
-
--- FITUR BYPASS
-local fullBrightEnabled = false
-local originalBrightness = Lighting.Brightness
-local originalClockTime = Lighting.ClockTime
-local originalAmbient = Lighting.Ambient
-local originalColorShift_Bottom = Lighting.ColorShift_Bottom
-local originalColorShift_Top = Lighting.ColorShift_Top
-local originalOutdoorAmbient = Lighting.OutdoorAmbient
-
-local noFogEnabled = false
-local originalFogEnd = Lighting.FogEnd
-local originalFogStart = Lighting.FogStart
-local originalFogColor = Lighting.FogColor
-
--- ================== ENGINE ACTIONS ==================
-local function startNoclip()
-    if noclipConnection then noclipConnection:Disconnect() end
-    noclipConnection = RunService.Stepped:Connect(function()
-        if noclipEnabled and LocalPlayer.Character then
-            for _, p in pairs(LocalPlayer.Character:GetDescendants()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
-            end
-        end
-    end)
-end
-
-local function stopNoclip()
-    if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
-end
-
-local function toggleSpin(state)
-    spinEnabled = state
-    if spinConnection then spinConnection:Disconnect() spinConnection = nil end
-    if state then
-        spinConnection = RunService.Heartbeat:Connect(function()
-            if spinEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame *= CFrame.Angles(0, math.rad(spinSpeed * spinDirection), 0)
-            end
-        end)
-    end
-end
-
-local function toggleInvisible(state)
-    invisibleEnabled = state
-    if invisibleConnection then invisibleConnection:Disconnect() invisibleConnection = nil end
-    if state and LocalPlayer.Character then
-        invisibleParts = {}
-        invisibleRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        invisibleHumanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
-            if v:IsA("BasePart") and v.Transparency == 0 then
-                table.insert(invisibleParts, {part = v, origTrans = v.Transparency})
-                v.Transparency = 0.5
-            end
-        end
-        invisibleConnection = RunService.Heartbeat:Connect(function()
-            if invisibleEnabled and invisibleRootPart and invisibleHumanoid then
-                local oldCF = invisibleRootPart.CFrame
-                local oldOffset = invisibleHumanoid.CameraOffset
-                local hideCF = oldCF * CFrame.new(0, -500000, 0)
-                invisibleRootPart.CFrame = hideCF
-                invisibleHumanoid.CameraOffset = hideCF:ToObjectSpace(CFrame.new(oldCF.Position)).Position
-                RunService.RenderStepped:Wait()
-                invisibleRootPart.CFrame = oldCF
-                invisibleHumanoid.CameraOffset = oldOffset
-            end
-        end)
-    else
-        if LocalPlayer.Character then
-            for _, data in pairs(invisibleParts) do
-                pcall(function()
-                    if data.part and data.part.Parent then
-                        data.part.Transparency = data.origTrans
-                    end
-                end)
-            end
-            for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
-                if v:IsA("BasePart") and v.Transparency == 0.5 then v.Transparency = 0 end
-            end
-        end
-        invisibleParts = {}
-        invisibleRootPart = nil
-        invisibleHumanoid = nil
-    end
-end
 
 -- HOLOGRAM CHAMS
 local function applyChams(player)
@@ -1562,93 +1504,104 @@ local function loadMainScript()
         end,
     })
 
-    -- ================== AIMLOCK (JARAK MAKS 100 STUD) ==================
+    -- ================== AIMBOT (SNAP INSTAN, JARAK MAKS 250 STUD) ==================
     TabMain:CreateDivider()
-    TabMain:CreateSection("Aimlock")
+    TabMain:CreateSection("Aimbot")
 
-    local AIMLOCK_RANGE  = 100   -- jarak maksimal (stud)
-    local AIMLOCK_SMOOTH = 0.3   -- 0.01 = pelan, 1 = instan
-    local aimlockEnabled = false
-    local aimlockConn    = nil
-    local aimlockCurrent = nil   -- target yang sedang dikunci
+    local AIM_RANGE = 250                                                   -- jarak maksimal (stud)
+    local AIM_PARTS = {"Head", "UpperTorso", "Torso", "HumanoidRootPart"}   -- urutan prioritas bagian yang dibidik
+    local AIM_BIND  = "PutzzAimbot"
+    local aimbotEnabled   = false
+    local aimWallCheck    = true
+    local aimbotTarget    = nil
 
-    local function isValidAimTarget(p, myPos)
-        if not p or p == LocalPlayer then return nil end
-        if isTeammate(p) then return nil end -- skip teman satu tim
+    local aimRayParams = RaycastParams.new()
+    aimRayParams.FilterType = Enum.RaycastFilterType.Exclude
+    aimRayParams.IgnoreWater = true
+
+    -- bagian tubuh musuh yang kelihatan di layar (dalam jarak, hidup, bukan tim, ga ketutup tembok)
+    local function getVisibleAimPart(p, camPos, myPos)
+        if not p or p == LocalPlayer or isTeammate(p) then return nil end
         local char = p.Character
         local hum  = char and char:FindFirstChildOfClass("Humanoid")
-        local head = char and char:FindFirstChild("Head")
-        if not (hum and head) or hum.Health <= 0 then return nil end
-        local dist = (head.Position - myPos).Magnitude
-        if dist > AIMLOCK_RANGE then return nil end
-        -- wall check: jangan kunci target yang ketutup tembok
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = {LocalPlayer.Character, char}
-        params.IgnoreWater = true
-        local origin = Camera.CFrame.Position
-        if workspace:Raycast(origin, head.Position - origin, params) then return nil end
-        return head, dist
-    end
-
-    local function getAimTarget()
-        local myChar = LocalPlayer.Character
-        local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myHRP then return nil end
-        local myPos = myHRP.Position
-
-        -- tetap kunci target lama selama masih valid (ga loncat-loncat)
-        if aimlockCurrent then
-            local head = isValidAimTarget(aimlockCurrent, myPos)
-            if head then return head end
-            aimlockCurrent = nil
-        end
-
-        -- cari yang paling dekat ke crosshair (layar), dalam jarak 100 stud
-        local vp = Camera.ViewportSize
-        local cx, cy = vp.X/2, vp.Y/2
-        local bestHead, bestPlayer, bestScore = nil, nil, math.huge
-        for _, p in ipairs(Players:GetPlayers()) do
-            local head, dist = isValidAimTarget(p, myPos)
-            if head then
-                local sp, onScreen = Camera:WorldToViewportPoint(head.Position)
+        if not hum or hum.Health <= 0 then return nil end
+        aimRayParams.FilterDescendantsInstances = {LocalPlayer.Character, char}
+        for _, name in ipairs(AIM_PARTS) do
+            local part = char:FindFirstChild(name)
+            if part and (part.Position - myPos).Magnitude <= AIM_RANGE then
+                local _, onScreen = Camera:WorldToViewportPoint(part.Position)
                 if onScreen then
-                    local score = math.sqrt((sp.X-cx)^2 + (sp.Y-cy)^2) + dist * 0.5
-                    if score < bestScore then
-                        bestScore, bestHead, bestPlayer = score, head, p
+                    if not aimWallCheck or not workspace:Raycast(camPos, part.Position - camPos, aimRayParams) then
+                        return part
                     end
                 end
             end
         end
-        aimlockCurrent = bestPlayer
-        return bestHead
+        return nil
     end
 
-    local function startAimlock()
-        if aimlockConn then aimlockConn:Disconnect() end
-        aimlockConn = RunService.RenderStepped:Connect(function()
-            if not aimlockEnabled then return end
-            local head = getAimTarget()
-            if not head then return end
-            local camPos = Camera.CFrame.Position
-            Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(camPos, head.Position), AIMLOCK_SMOOTH)
-        end)
+    -- pilih musuh terlihat yang paling dekat ke crosshair (tengah layar)
+    local function pickAimTarget(camPos, myPos)
+        local vp = Camera.ViewportSize
+        local center = Vector2.new(vp.X / 2, vp.Y / 2)
+        local bestPart, bestPlayer, bestScore = nil, nil, math.huge
+        for _, p in ipairs(Players:GetPlayers()) do
+            local part = getVisibleAimPart(p, camPos, myPos)
+            if part then
+                local sp = Camera:WorldToViewportPoint(part.Position)
+                local score = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                if score < bestScore then
+                    bestScore, bestPart, bestPlayer = score, part, p
+                end
+            end
+        end
+        return bestPart, bestPlayer
+    end
+
+    local function aimbotStep()
+        local char   = LocalPlayer.Character
+        local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return end
+        local camPos = Camera.CFrame.Position
+        local myPos  = myRoot.Position
+
+        -- target lama dipertahankan selama masih kelihatan; kalau hilang/mati langsung pindah ke musuh lain
+        local part = aimbotTarget and getVisibleAimPart(aimbotTarget, camPos, myPos)
+        if not part then
+            part, aimbotTarget = pickAimTarget(camPos, myPos)
+        end
+        if part then
+            Camera.CFrame = CFrame.new(camPos, part.Position)   -- snap instan, tanpa smoothing
+        end
     end
 
     TabMain:CreateToggle({
-        Name = "Aimlock (maks 100 stud)",
+        Name = "Aimbot (250 stud)",
         CurrentValue = false,
         Flag = "AimlockToggle",
         Callback = function(state)
-            aimlockEnabled = state
-            aimlockCurrent = nil
+            aimbotEnabled = state
+            aimbotTarget = nil
+            pcall(function() RunService:UnbindFromRenderStep(AIM_BIND) end)
             if state then
-                startAimlock()
-                UI:Notify({Title="Aimlock", Content="Aktif! Jarak maks 100 stud.", Duration=2})
+                -- jalan sesudah script kamera game, jadi ga ditimpa
+                RunService:BindToRenderStep(AIM_BIND, Enum.RenderPriority.Camera.Value + 1, function()
+                    local ok, err = pcall(aimbotStep)
+                    if not ok then warn("[Aimbot] " .. tostring(err)) end
+                end)
+                UI:Notify({Title = "Aimbot", Content = "Aktif. Kamera langsung kunci musuh yang terlihat (maks 250 stud).", Duration = 2.5})
             else
-                if aimlockConn then aimlockConn:Disconnect(); aimlockConn = nil end
-                UI:Notify({Title="Aimlock", Content="Dinonaktifkan.", Duration=2})
+                UI:Notify({Title = "Aimbot", Content = "Dinonaktifkan.", Duration = 2})
             end
+        end,
+    })
+
+    TabMain:CreateToggle({
+        Name = "Wall check (musuh harus terlihat)",
+        CurrentValue = true,
+        Flag = "AimWallCheck",
+        Callback = function(state)
+            aimWallCheck = state
         end,
     })
 
@@ -1724,6 +1677,97 @@ local function loadMainScript()
             end
         end,
     })
+
+    -- ================== TAB MISC ==================
+    local TabMisc = Window:CreateTab("Misc", "map-pin")
+
+    TabMisc:CreateSection("Teleport ke Player")
+
+    local function playerNames(exclude)
+        local t = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p ~= exclude then table.insert(t, p.Name) end
+        end
+        table.sort(t)
+        return t
+    end
+
+    local tpDropdown = TabMisc:CreateDropdown({
+        Name = "Pilih player",
+        Options = playerNames(),
+    })
+    Players.PlayerAdded:Connect(function()
+        task.wait(0.2)
+        tpDropdown:Refresh(playerNames())
+    end)
+    Players.PlayerRemoving:Connect(function(p)
+        tpDropdown:Refresh(playerNames(p))
+    end)
+
+    TabMisc:CreateButton({
+        Name = "Teleport",
+        Callback = function()
+            local name = tpDropdown:Get()
+            if not name then
+                UI:Notify({Title = "Teleport", Content = "Pilih player dulu.", Duration = 2})
+                return
+            end
+            local target = Players:FindFirstChild(name)
+            local tRoot  = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not (tRoot and myRoot) then
+                UI:Notify({Title = "Teleport", Content = "Karakter player tidak ditemukan.", Duration = 2.5})
+                return
+            end
+            local pos = tRoot.Position - tRoot.CFrame.LookVector * 4 + Vector3.new(0, 2, 0)
+            myRoot.AssemblyLinearVelocity = Vector3.zero
+            myRoot.CFrame = CFrame.new(pos, tRoot.Position)
+            UI:Notify({Title = "Teleport", Content = "Pindah ke " .. name, Duration = 2})
+        end,
+    })
+
+    TabMisc:CreateDivider()
+    TabMisc:CreateSection("Anti Void")
+
+    local antiVoidConn  = nil
+    local lastSafeCF    = nil
+    local lastVoidTp    = 0
+
+    LocalPlayer.CharacterAdded:Connect(function() lastSafeCF = nil end)
+
+    TabMisc:CreateToggle({
+        Name = "Anti Void",
+        CurrentValue = false,
+        Flag = "AntiVoid",
+        Callback = function(state)
+            if antiVoidConn then antiVoidConn:Disconnect() antiVoidConn = nil end
+            if not state then return end
+            antiVoidConn = RunService.Heartbeat:Connect(function()
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local hum  = char and char:FindFirstChildOfClass("Humanoid")
+                if not (root and hum) or hum.Health <= 0 then return end
+
+                -- batas void: ikut FallenPartsDestroyHeight map, dikasih jarak aman
+                local limit = math.max(workspace.FallenPartsDestroyHeight, -3000) + 100
+                local y = root.Position.Y
+
+                -- simpan posisi aman terakhir saat napak di tanah
+                if hum.FloorMaterial ~= Enum.Material.Air and y > limit then
+                    lastSafeCF = root.CFrame + Vector3.new(0, 3, 0)
+                end
+
+                if y < limit and lastSafeCF and lastSafeCF.Position.Y > y + 50 and os.clock() - lastVoidTp > 1 then
+                    lastVoidTp = os.clock()
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                    root.CFrame = lastSafeCF
+                    UI:Notify({Title = "Anti Void", Content = "Kamu ditarik balik ke posisi aman.", Duration = 2})
+                end
+            end)
+        end,
+    })
+    TabMisc:CreateLabel("Otomatis balik ke posisi napak terakhir kalau jatuh ke void.")
 
     -- ================== TAB SETTINGS ==================
     local TabSettings = Window:CreateTab("Settings", "settings")
