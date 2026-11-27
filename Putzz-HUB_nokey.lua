@@ -601,15 +601,19 @@ do
 
             function Tab:CreateButton(o)
                 local r = row(54)
-                local b = new("TextButton", {
+                local holder = new("Frame", {
                     Size = UDim2.new(1, 0, 0, 38), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, -1),
-                    BackgroundColor3 = WHITE, BorderSizePixel = 0, AutoButtonColor = false, Font = BOLD, TextSize = 14,
-                    TextColor3 = WHITE, Text = tostring(o.Name), Parent = r,
+                    BackgroundTransparency = 1, Parent = r,
                 })
-                round(b, 10)
-                local g = grad(b, 0)
-                stroke(b, WHITE, 1, 0.85)
-                local s = new("UIScale", {Scale = 1, Parent = b})
+                local bg = new("Frame", {Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = WHITE, BorderSizePixel = 0, ZIndex = 1, Parent = holder})
+                round(bg, 10)
+                local g = grad(bg, 0)
+                stroke(bg, WHITE, 1, 0.85)
+                local b = new("TextButton", {
+                    Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, AutoButtonColor = false, Font = BOLD, TextSize = 14,
+                    TextColor3 = WHITE, Text = tostring(o.Name), ZIndex = 2, Parent = holder,
+                })
+                local s = new("UIScale", {Scale = 1, Parent = holder})
                 pressFx(b, s, 0.96)
                 b.MouseButton1Down:Connect(function() tween(g, 0.15, {Rotation = 40}) end)
                 local function up() tween(g, 0.4, {Rotation = 0}) end
@@ -907,20 +911,24 @@ do
                 local build
                 build = function()
                     for _, ch in ipairs(list:GetChildren()) do
-                        if ch:IsA("TextButton") or ch:IsA("TextLabel") then ch:Destroy() end
+                        if ch:IsA("Frame") or ch:IsA("TextLabel") then ch:Destroy() end
                     end
                     if #options == 0 then
                         text(list, {Size = UDim2.new(1, 0, 0, 34), TextColor3 = T.Sub, Text = "Tidak ada player lain"})
                     end
                     for i, name in ipairs(options) do
                         local on = (name == selected)
-                        local b = new("TextButton", {
-                            Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = on and WHITE or T.Raised, BorderSizePixel = 0,
-                            AutoButtonColor = false, Font = FONT, TextSize = 13, TextColor3 = on and WHITE or T.Text,
-                            TextXAlignment = Enum.TextXAlignment.Left, Text = "  " .. tostring(name), LayoutOrder = i, Parent = list,
+                        local item = new("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = i, Parent = list})
+                        local ibg = new("Frame", {
+                            Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = on and WHITE or T.Raised, BorderSizePixel = 0, ZIndex = 1, Parent = item,
                         })
-                        round(b, 8)
-                        if on then grad(b, 0) end
+                        round(ibg, 8)
+                        if on then grad(ibg, 0) end
+                        local b = new("TextButton", {
+                            Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, AutoButtonColor = false, Font = FONT, TextSize = 13,
+                            TextColor3 = on and WHITE or T.Text, TextXAlignment = Enum.TextXAlignment.Left,
+                            Text = "  " .. tostring(name), ZIndex = 2, Parent = item,
+                        })
                         b.MouseButton1Click:Connect(function()
                             selected = name
                             valLbl.Text = tostring(name)
@@ -1832,8 +1840,10 @@ local function loadMainScript()
                 return
             end
             local pos = tRoot.Position - tRoot.CFrame.LookVector * 4 + Vector3.new(0, 2, 0)
+            local goal = CFrame.new(pos, tRoot.Position)
+            if invisibleHidden then invisibleOldCF = goal end
             myRoot.AssemblyLinearVelocity = Vector3.zero
-            myRoot.CFrame = CFrame.new(pos, tRoot.Position)
+            myRoot.CFrame = goal
         end,
     })
 
@@ -1872,6 +1882,7 @@ local function loadMainScript()
                     lastVoidTp = os.clock()
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.AssemblyAngularVelocity = Vector3.zero
+                    if invisibleHidden then invisibleOldCF = lastSafeCF end
                     root.CFrame = lastSafeCF
                 end
             end)
